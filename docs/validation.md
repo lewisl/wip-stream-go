@@ -13,7 +13,12 @@ or real development repository was used.
 Checks passed:
 
 - `go build ./...`
-- `go test -race ./...`: operation reader tests and thirteen Git fixture scenarios.
+- `go test -count=1 ./...` and `go test -race -count=1 ./...`: 62 top-level
+  Go test functions and 98 named subtests passed, with zero skipped on Linux.
+  This covers all twelve Go commands, CLI arguments and flags, command-specific
+  success/refusal behavior, Git transactions, and receipt validation.
+  See [the Go testing guide](testing.md) for the scenario mapping and remaining
+  gaps relative to the reference suite.
 - `go vet ./...`
 - `node test/interop.js`: fourteen cross-implementation scenarios, against
   the installed VSIX's compiled functional implementation.
@@ -22,6 +27,10 @@ Checks passed:
   directory-permission assertions.
 - `node test/vscode-roundtrip.js`: passed three times, including after the final
   safety changes and rebuild.
+
+The Go command suite above was expanded after the original interoperability
+and VS Code runs recorded below. That expansion was validated using Go and Git;
+the previously recorded extension runs were not repeated for the test additions.
 
 ## Extension → Go → extension
 
