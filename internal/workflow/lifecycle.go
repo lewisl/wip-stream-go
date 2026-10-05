@@ -59,7 +59,7 @@ func Start(repo *git.Repository, name string) (result Result, err error) {
 			return fmt.Errorf("INVALID_BRANCH")
 		}
 		if _, e = repo.Run("check-ref-format", "--branch", name); e != nil {
-			return e
+			return fmt.Errorf("INVALID_BRANCH: %w", e)
 		}
 		for _, ref := range []string{git.Local(name), git.Tracking(remote, name)} {
 			tip, e := repo.Object(ref)

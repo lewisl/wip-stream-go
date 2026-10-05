@@ -48,6 +48,12 @@ until a subsequent handoff succeeds.
 
 ## Validation
 
+Go tests are in `*_test.go` files beside their packages under `internal/`.
+They test the Go app using disposable Git repositories. Run `go test ./...`
+or `go test -v ./...` to see individual tests and subtests; neither command
+requires Node or VS Code. See [the Go testing guide](docs/testing.md) for the
+command-by-command coverage and its correspondence to the reference scenarios.
+
 ```sh
 go test -race ./...
 go vet ./...
