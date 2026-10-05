@@ -15,22 +15,39 @@ requires Git at runtime; it does not require VS Code, Node.js, or Go.
 
 ## Install the Go app
 
-Build from source with Go 1.27.1 or later and Git. The implementation currently
-lives on the `go-cli-roundtrip` branch:
+Build from source with Go 1.27.1 or later and Git:
 
 ```sh
-git clone --branch go-cli-roundtrip https://github.com/lewisl/wip-stream-go.git
+git clone https://github.com/lewisl/wip-stream-go.git
 cd wip-stream-go
 go build -o bin/wipstream ./cmd/wipstream
-export PATH="$PWD/bin:$PATH"
+bin/wipstream --help
+```
+
+On macOS or Linux, create a symlink in `/usr/local/bin` to make the command
+available from other directories and new terminal sessions. Run this once from
+the repository root, provided `/usr/local/bin` is on your PATH:
+
+```sh
+sudo mkdir -p /usr/local/bin
+sudo ln -s "$PWD/bin/wipstream" /usr/local/bin/wipstream
+command -v wipstream
 wipstream --help
 ```
 
-The `export` adds the executable to this shell's PATH. For later sessions, put
-`wipstream` in a directory already on your PATH or add its installation directory
-to your shell configuration. On Windows, build with
-`go build -o bin/wipstream.exe ./cmd/wipstream` and add that directory to PATH.
-Current runtime validation has been performed on Linux.
+Keep the checkout at that location. After source updates, rebuild with
+`go build -o bin/wipstream ./cmd/wipstream`; the existing symlink points to the
+rebuilt executable, so it does not need to be recreated.
+
+For an installation independent of the checkout's location, copy the executable
+into a directory on PATH instead. On Windows, build with
+`go build -o bin/wipstream.exe ./cmd/wipstream` and add its installation directory
+to PATH. Current runtime validation has been performed on Linux.
+
+`PATH` is the standard list of directories used to find executable commands.
+For a temporary trial in one shell, `export PATH="$PWD/bin:$PATH"` from the
+repository root works too. That export affects the current shell and its child
+processes; it does not persist after the shell exits.
 
 This is an initial compatibility implementation. See the
 [validation record](design/validation.md) for tested behavior and platforms.
