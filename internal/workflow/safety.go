@@ -118,7 +118,7 @@ func acquire(repo *git.Repository, command string) (func() error, error) {
 	}
 	return release, nil
 }
-func RecoverLock(repo *git.Repository) (bool, error) {
+func RecoverLock(repo *git.Repository) (reclaimed bool, err error) {
 	if e := repo.SingleWorktree(); e != nil {
 		return false, e
 	}
@@ -154,7 +154,11 @@ func RecoverLock(repo *git.Repository) (bool, error) {
 	if e = repo.UpdateRefs([]git.Update{{Ref: recoveryLease, ExpectedOld: previous, Proposed: git.Ptr(blob)}}); e != nil {
 		return false, e
 	}
-	defer repo.UpdateRefs([]git.Update{{Ref: recoveryLease, ExpectedOld: git.Ptr(blob)}})
+	defer func() {
+		if releaseErr := repo.UpdateRefs([]git.Update{{Ref: recoveryLease, ExpectedOld: git.Ptr(blob)}}); err == nil {
+			err = releaseErr
+		}
+	}()
 	before, e := os.Lstat(p)
 	if os.IsNotExist(e) {
 		return previous != nil, nil

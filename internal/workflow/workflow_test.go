@@ -284,6 +284,18 @@ func TestStaleApprovalRefusesChangedFiles(t *testing.T) {
 		t.Fatal("work discarded")
 	}
 }
+
+func TestStaleApprovalRefusesChangedIntentToAdd(t *testing.T) {
+	f := newFixture(t)
+	write(t, f.first.Root, "empty.txt", "")
+	command(t, f.first.Root, "add", "--intent-to-add", "empty.txt")
+	opts := Options{InitChoice: func(string) (string, error) {
+		command(t, f.first.Root, "add", "empty.txt")
+		return "remote", nil
+	}, Discard: true}
+	_, err := Init(f.first, opts)
+	requireError(t, err, "SETUP_STATE_CHANGED")
+}
 func TestMalformedReceiptBlocksMutation(t *testing.T) {
 	f := newFixture(t)
 	common, e := f.first.CommonDir()

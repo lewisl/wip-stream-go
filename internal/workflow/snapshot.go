@@ -8,7 +8,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/lewisl/wip-stream-go/internal/git"
@@ -170,7 +172,7 @@ func snapshotState(repo *git.Repository) (string, error) {
 	if e != nil {
 		return "", e
 	}
-	index, e := repo.Raw(nil, "ls-files", "--stage", "-v", "-z")
+	index, e := indexSignature(repo)
 	if e != nil {
 		return "", e
 	}
@@ -178,7 +180,51 @@ func snapshotState(repo *git.Repository) (string, error) {
 	if e != nil {
 		return "", e
 	}
-	return digestJSON([]any{branch, head, refs, files, string(index), string(config)})
+	return digestJSON([]any{branch, head, refs, files, index, string(config)})
+}
+
+var indexFlags = regexp.MustCompile("\\tflags: ([0-9a-f]+)\\n$")
+
+func indexSignature(repo *git.Repository) (string, error) {
+	raw, err := repo.Raw(nil, "ls-files", "--stage", "-v", "--debug", "-z")
+	if err != nil {
+		return "", err
+	}
+	remaining := string(raw)
+	type indexEntry struct {
+		Entry string
+		Flags uint64
+	}
+	entries := []indexEntry{}
+	for remaining != "" {
+		separator := strings.IndexByte(remaining, 0)
+		if separator < 0 {
+			return "", fmt.Errorf("INDEX_INSPECTION_FAILED: incomplete entry")
+		}
+		entry := remaining[:separator]
+		remaining = remaining[separator+1:]
+		debugEnd := 0
+		for line := 0; line < 5; line++ {
+			newline := strings.IndexByte(remaining[debugEnd:], '\n')
+			if newline < 0 {
+				return "", fmt.Errorf("INDEX_INSPECTION_FAILED: incomplete flags")
+			}
+			debugEnd += newline + 1
+		}
+		match := indexFlags.FindStringSubmatch(remaining[:debugEnd])
+		if match == nil {
+			return "", fmt.Errorf("INDEX_INSPECTION_FAILED: unrecognized flags")
+		}
+		flags, err := strconv.ParseUint(match[1], 16, 32)
+		if err != nil {
+			return "", err
+		}
+		// Match the reference: retain assume-unchanged, intent-to-add, and
+		// skip-worktree, while discarding incidental index stat-cache flags.
+		entries = append(entries, indexEntry{entry, flags & 0x60008000})
+		remaining = remaining[debugEnd:]
+	}
+	return digestJSON(entries)
 }
 func within(root, target string) bool {
 	rel, e := filepath.Rel(root, target)

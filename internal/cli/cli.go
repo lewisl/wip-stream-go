@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -68,6 +69,29 @@ func New() *cobra.Command {
 				e := huh.NewSelect[string]().Title(preview).Options(huh.NewOption("Use the remote's version", "remote"), huh.NewOption("Commit this machine's work and save to remote", "local-work"), huh.NewOption("Resolve differences locally, then save to remote", "reconcile"), huh.NewOption("Cancel", "cancel")).Value(&value).Run()
 				return value, e
 			}
+			opts.RemoteBackup = func() (string, bool, error) {
+				if !term.IsTerminal(int(os.Stdin.Fd())) {
+					return "", false, fmt.Errorf("remote replacement requires --backup-parent or --discard-local-work")
+				}
+				var choice string
+				e := huh.NewSelect[string]().Title("Preserve this project before replacing it?").
+					Options(huh.NewOption("Create a verified complete backup", "copy"),
+						huh.NewOption("Replace without a backup", "discard"),
+						huh.NewOption("Cancel", "cancel")).Value(&choice).Run()
+				if e != nil {
+					return "", false, e
+				}
+				switch choice {
+				case "copy":
+					parent, e := input("Existing backup parent outside this project", filepath.Dir(repo.Root))
+					return parent, false, e
+				case "discard":
+					approved, e := opts.Confirm("Discard tracked changes and non-ignored untracked files without a backup?")
+					return "", approved, e
+				default:
+					return "", false, fmt.Errorf("CANCELLED: no files replaced")
+				}
+			}
 			if commandName == "finish" && disposition == "" {
 				if !term.IsTerminal(int(os.Stdin.Fd())) {
 					return fmt.Errorf("pass --disposition retain or delete")
@@ -114,8 +138,11 @@ func New() *cobra.Command {
 				result, e = workflow.Condense(repo, opts)
 			}
 			if e != nil {
-				if result.Message != "" {
+				if commandName == "save" && result.Message != "" {
 					fmt.Fprintln(cmd.ErrOrStderr(), result.Message)
+				}
+				if result.OperationID != "" {
+					return fmt.Errorf("%w; inspect operation %s before retrying", e, result.OperationID)
 				}
 				return e
 			}

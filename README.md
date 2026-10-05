@@ -62,6 +62,24 @@ Node built-ins and creates disposable local bare remotes and ordinary clones.
 It tests both directions, including pending merges, recovery, receipts, and
 cross-implementation Undo. Real project checkouts are never workflow fixtures.
 
+For the real VS Code roundtrip, install VS Code, provide a graphical session
+(Xvfb works on Linux), and obtain the VSIX from the reference repository:
+
+```sh
+WIPSTREAM_VSIX=/path/to/wip-stream/dist/lewisl.wipstream-0.2.9.vsix \
+  node test/vscode-roundtrip.js
+```
+
+Set `WIPSTREAM_CODE` if the VS Code CLI is outside PATH, and
+`WIPSTREAM_GO_BINARY` if the compiled CLI is outside `bin/wipstream`.
+The runner installs the VSIX into a new isolated profile and runs its public
+commands in VS Code's extension host. Native input acceptance is automated.
+It records the current run in `test-results/vscode-roundtrip.json`.
+In cloud containers that cannot run Chromium's nested sandbox, set
+`WIPSTREAM_CODE_NO_SANDBOX=1`. The extension itself is the unchanged VSIX.
+
+See [validation results](docs/validation.md) for the tested versions and sequence.
+
 Windows lock owners are conservatively treated as unverifiable for stale-lock
 recovery; ordinary lock interoperability is supported. Current behavioral
 validation runs on Linux.

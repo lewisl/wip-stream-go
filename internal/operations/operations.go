@@ -175,6 +175,15 @@ func Decode(data []byte, id string) (*Receipt, error) {
 		if e := json.Unmarshal(planRaw["remoteLeases"], &leases); e != nil {
 			return nil, e
 		}
+		var rawLeases []map[string]json.RawMessage
+		if e := json.Unmarshal(planRaw["remoteLeases"], &rawLeases); e != nil {
+			return nil, e
+		}
+		for _, lease := range rawLeases {
+			if _, ok := lease["expected"]; !ok {
+				return nil, fmt.Errorf("missing legacy lease expectation")
+			}
+		}
 		byRef := map[string]*string{}
 		for _, l := range leases {
 			if _, ok := byRef[l.Ref]; ok {
@@ -194,6 +203,18 @@ func Decode(data []byte, id string) (*Receipt, error) {
 			return nil, fmt.Errorf("unmatched legacy leases")
 		}
 		r.Plan.SchemaVersion = 2
+	} else {
+		var updates []map[string]json.RawMessage
+		if e := json.Unmarshal(planRaw["remoteRefUpdates"], &updates); e != nil {
+			return nil, e
+		}
+		for _, update := range updates {
+			for _, key := range []string{"ref", "expected", "proposed"} {
+				if _, ok := update[key]; !ok {
+					return nil, fmt.Errorf("missing remote update field %s", key)
+				}
+			}
+		}
 	}
 	check := []git.Update{}
 	for _, u := range r.Plan.RemoteRefUpdates {
@@ -201,6 +222,19 @@ func Decode(data []byte, id string) (*Receipt, error) {
 	}
 	if e := git.ValidateUpdates(check); e != nil {
 		return nil, e
+	}
+	for _, c := range r.Plan.ConfigurationChanges {
+		if c.Key == "" || c.Before == nil || c.After == nil {
+			return nil, fmt.Errorf("invalid configuration transition")
+		}
+	}
+	if p := r.PendingMerge; p != nil {
+		if p.Kind != "merge" || (p.Command != "Update from Parent" && p.Command != "Reconcile with Remote") ||
+			p.Branch == "" || !git.ValidRef(p.MergeTarget) || !git.ValidOID(git.Ptr(p.PreHead)) ||
+			!git.ValidOID(git.Ptr(p.PreIndexTree)) || (p.MergeTargetCommit != "" && !git.ValidOID(git.Ptr(p.MergeTargetCommit))) ||
+			p.Conflicts == nil {
+			return nil, fmt.Errorf("invalid pending merge evidence")
+		}
 	}
 	if r.Outcome != nil {
 		if r.Outcome.AdditionalLocalRefUpdates == nil {

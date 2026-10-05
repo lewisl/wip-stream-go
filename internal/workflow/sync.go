@@ -24,6 +24,7 @@ type Options struct {
 	Parent       func(string) (string, error)
 	Confirm      func(string) (bool, error)
 	InitChoice   func(string) (string, error)
+	RemoteBackup func() (parent string, discard bool, err error)
 	Remote       string
 	Authority    string
 	BackupParent string

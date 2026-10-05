@@ -31,7 +31,7 @@ func adoptRemote(repo *git.Repository, opts Options, remote, branch, def string,
 	}
 	targetNames := []string{}
 	tracked := map[string]bool{}
-	for _, b := range [][]byte{target, current} {
+	for i, b := range [][]byte{target, current} {
 		for _, line := range git.NulList(b) {
 			parts := strings.SplitN(line, "\t", 2)
 			if len(parts) != 2 {
@@ -40,7 +40,7 @@ func adoptRemote(repo *git.Repository, opts Options, remote, branch, def string,
 			if strings.HasPrefix(parts[0], "160000 ") {
 				return result, fmt.Errorf("REMOTE_ADOPTION_SUBMODULES")
 			}
-			if string(b) == string(target) {
+			if i == 0 {
 				targetNames = append(targetNames, parts[1])
 			} else {
 				tracked[parts[1]] = true
@@ -55,6 +55,12 @@ func adoptRemote(repo *git.Repository, opts Options, remote, branch, def string,
 		tracked[name] = true
 	}
 	backupInfo := map[string]string{"kind": "explicit-discard"}
+	if opts.BackupParent == "" && !opts.Discard && opts.RemoteBackup != nil {
+		opts.BackupParent, opts.Discard, e = opts.RemoteBackup()
+		if e != nil {
+			return result, e
+		}
+	}
 	if opts.BackupParent != "" {
 		p, e := backup(repo, opts.BackupParent)
 		if e != nil {
