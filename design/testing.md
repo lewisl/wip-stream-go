@@ -76,3 +76,61 @@ and cloud VS Code roundtrip harnesses. They demonstrated the earlier
 extension → Go → extension sequence and shared-receipt compatibility.
 Their invocation is optional when running the Go command suite above.
 See [validation evidence](validation.md) for the recorded runs.
+
+## Build and review checks
+
+Run the standard Go tooling from the repository root:
+
+```sh
+go build ./...
+go vet ./...
+go test -race ./...
+go build -o bin/wipstream ./cmd/wipstream
+```
+
+Read [AGENTS.md](../AGENTS.md), the [port specification](overall_spec.md),
+[command semantics](command_spec.md), and [persistence protocol](persistence_protocol.md)
+before changing workflow behavior. Write contributor documentation in `design/`
+and user guides in `doc/`; keep the root README focused on using the app.
+
+## Functional interoperability
+
+The compatibility harness alternates the Go executable and the reference's
+compiled functional implementation in disposable local bare remotes and clones:
+
+```sh
+WIPSTREAM_REFERENCE=/path/to/compiled/wip-stream node test/interop.js
+```
+
+The reference checkout must have its `out/` files compiled with its own
+`npm ci` and `npm run compile`. An unpacked installed VSIX containing `out/`
+can also serve as the reference. The harness uses Node built-ins. It exercises
+both directions, including pending merges, recovery, receipts, and Undo.
+Neither source repository may be used as a workflow fixture.
+
+The runner defaults to `bin/wipstream`; set `WIPSTREAM_GO_BINARY` if the executable
+is elsewhere. Build it before running the harness.
+
+## Cloud VS Code roundtrip harness
+
+The separate host harness requires VS Code and a graphical session; Xvfb works
+on Linux. Obtain the unchanged VSIX from the reference repository:
+
+```sh
+WIPSTREAM_VSIX=/path/to/wip-stream/dist/lewisl.wipstream-0.2.9.vsix \
+  node test/vscode-roundtrip.js
+```
+
+The runner installs the VSIX into a fresh isolated profile and exercises public
+commands in the real extension host. It creates a disposable project fixture
+and records the invocation in `test-results/vscode-roundtrip.json`.
+Set `WIPSTREAM_CODE` if the Code CLI is outside PATH, and
+`WIPSTREAM_GO_BINARY` if the compiled Go CLI is outside `bin/wipstream`.
+For cloud containers that cannot run Chromium's nested sandbox, set
+`WIPSTREAM_CODE_NO_SANDBOX=1`. `WIPSTREAM_KEEP_FIXTURE=1` retains the disposable
+fixture for inspection; the default cleans it up. The installed extension is the
+unchanged GitHub VSIX.
+
+These host and interoperability harnesses are separate from `go test ./...`.
+See [validation evidence](validation.md) for previously recorded versions and
+results.

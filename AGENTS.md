@@ -225,6 +225,13 @@ For each behavior, verify as applicable:
 - the Go implementation can continue from equivalent TypeScript-produced state;
 - tests use only disposable fixtures.
 
+## Documentation Layout
+
+Keep the root `README.md` as the usage entry point. Put additional end-user
+guides in `doc/`. Put developer and contributor documentation, including design
+specifications, testing instructions, and validation records, in `design/`.
+Go tests remain beside their packages in `*_test.go` files.
+
 ## Working Style for Agents
 
 Keep changes narrowly scoped. Run the smallest relevant tests while developing, then the broader Go and interoperability suites before declaring a subsystem complete.
