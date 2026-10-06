@@ -131,7 +131,7 @@ func Undo(repo *git.Repository, opts Options) (result Result, err error) {
 		if e != nil {
 			return e
 		}
-		if e = confirm(opts, "Undo "+original.Plan.Command+" ("+original.Plan.OperationID+")?"); e != nil {
+		if e = confirm(opts, "Undo "+original.Plan.Command+" and restore its recorded before-state?"); e != nil {
 			return e
 		}
 		remote, e := repo.ConfigOne("wipstream.remote")
@@ -196,7 +196,14 @@ func Undo(repo *git.Repository, opts Options) (result Result, err error) {
 		if h := original.Plan.RemoteHead; h != nil {
 			p.RemoteHead = &operations.RemoteHead{Remote: h.Remote, Before: h.After, After: h.Before}
 		}
-		result = Result{OperationID: p.OperationID, Checkout: p.Checkout.After, Message: "Undid " + original.Plan.Command}
+		message := fmt.Sprintf("Undid %q and restored its recorded branch state.", original.Plan.Command)
+		if p.Checkout.After != "" {
+			message += fmt.Sprintf(" Checked out %q.", p.Checkout.After)
+		}
+		if p.CheckpointRestoration != nil {
+			message += " Restored checkpointed files as uncommitted work."
+		}
+		result = Result{OperationID: p.OperationID, Checkout: p.Checkout.After, Message: message}
 		return operations.Recorded(repo, p, func(r *operations.Receipt) error {
 			if len(p.RemoteRefUpdates) > 0 {
 				if e := operations.Boundary(repo, r, "remote-push", func() error { return repo.Push(remote, p.RemoteRefUpdates, false) }); e != nil {

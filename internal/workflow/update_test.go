@@ -45,7 +45,7 @@ func TestUpdateImportedBranchRequiresAndRecordsParent(t *testing.T) {
 	}}
 	result, err := Update(f.first, opts)
 	requireOK(t, result, err)
-	requireMessage(t, result, "Already contains parent")
+	requireMessage(t, result, "already contains parent")
 	if command(t, f.first.Root, "config", "--get", "branch.imported.wipstreamParent") != "main" {
 		t.Fatal("confirmed parent not recorded")
 	}

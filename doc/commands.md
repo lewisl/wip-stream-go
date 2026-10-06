@@ -284,6 +284,16 @@ unsafe replacement.
 
 ## Noninteractive runs and results
 
+Normal terminal output starts with `SUCCESS` and describes the verified result:
+checkpoint creation, branches pushed or retrieved, and the final checkout as
+applicable. Commands that make no changes say so. A merge requiring attention
+starts with `PENDING` and lists the conflicts and the Continue/Abort commands.
+
+Routine completion messages omit operation IDs. These IDs identify local
+WipStream records, not Git commits; you do not need them for Undo. When an
+interrupted operation needs recovery, an error can show its ID and the command
+that uses it. Verified backup paths are still reported after remote replacement.
+
 Supply inputs explicitly when running without a terminal:
 
 ```sh
@@ -302,6 +312,9 @@ false optional fields are omitted. A pending merge returns success with
 workflow result: Get, Start, clean Update, Undo, and Recover do not claim a Save
 handoff. Remote authority Init reports adoption without publication.
 
-Errors return a nonzero exit status and appear on standard error, even with
-`--json`. Failed Save may report a retained local checkpoint there. Check the
-exit status and pending state before treating a run as a completed handoff.
+JSON results retain `operationId` separately from `message` and omit the
+terminal's status prefix. Errors return a nonzero exit status and appear with
+`ERROR` on standard error, even with `--json`. A `WARNING` can describe retained
+local work after a failed handoff, including an Init checkpoint or a completed
+merge whose subsequent push failed. Check the exit status and pending state
+before treating a run as a completed handoff.

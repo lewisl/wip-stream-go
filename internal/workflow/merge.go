@@ -24,7 +24,7 @@ func merge(repo *git.Repository, command, branch, target, targetCommit string) (
 	p.Checkout = operations.Checkout{Before: branch, After: branch}
 	p.DestructiveEffects = append(p.DestructiveEffects, operations.Effect{Kind: "rewrite-local-ref", Ref: git.Local(branch), Description: "Merge " + target + " into " + branch})
 	pending := &operations.PendingMerge{Kind: "merge", Command: command, Branch: branch, MergeTarget: target, MergeTargetCommit: targetCommit, PreHead: before, PreIndexTree: index, PreStatus: status, Conflicts: []string{}}
-	result = Result{OperationID: p.OperationID, Checkout: branch, Message: command + " completed"}
+	result = Result{OperationID: p.OperationID, Checkout: branch}
 	err = operations.Recorded(repo, p, func(r *operations.Receipt) error {
 		if e := operations.Boundary(repo, r, "local-refs", func() error {
 			return repo.UpdateRefs([]git.Update{{Ref: operations.RecoveryRef(p.OperationID, 0), Proposed: git.Ptr(before)}})
@@ -54,7 +54,7 @@ func merge(repo *git.Repository, command, branch, target, targetCommit string) (
 				}
 				result.Pending = true
 				result.Conflicts = pending.Conflicts
-				result.Message = "Merge pending; resolve conflicts and use continue or abort"
+				result.Message = pendingMergeMessage(branch, pending.Conflicts)
 				return nil
 			}
 			return e
@@ -112,9 +112,14 @@ func Reconcile(repo *git.Repository, opts Options) (result Result, err error) {
 	}
 	saved, e := Save(repo, opts)
 	if e != nil {
+		result.OperationID = saved.OperationID
+		result.CheckpointCreated = saved.CheckpointCreated
+		result.Message = fmt.Sprintf("Merged remote history into %q, but saving to the remote did not complete. %s", result.Checkout, saved.Message)
 		return result, e
 	}
 	result.Published = saved.Published
+	result.CheckpointCreated = saved.CheckpointCreated
+	result.Message = fmt.Sprintf("Merged remote history into %q. %s", result.Checkout, saved.Message)
 	return
 }
 func pendingReceipt(repo *git.Repository) (*operations.Receipt, error) {
@@ -275,6 +280,7 @@ func Continue(repo *git.Repository, opts Options) (result Result, err error) {
 			if resolution.Resolution != "merge-completed-externally" {
 				return fmt.Errorf("MERGE_ALREADY_ABORTED: record closed; run save")
 			}
+			result.Message = fmt.Sprintf("Git already completed the merge on %q; closed its interrupted record.", p.Branch)
 		} else {
 			if e = requireMerge(repo, p); e != nil {
 				return e
@@ -296,8 +302,10 @@ func Continue(repo *git.Repository, opts Options) (result Result, err error) {
 			if e = operations.Complete(repo, r); e != nil {
 				return e
 			}
+			result.Message = fmt.Sprintf("Committed the resolved merge on %q.", p.Branch)
 		}
-		result = Result{OperationID: r.Plan.OperationID, Checkout: p.Branch, Message: "Merge continued"}
+		result.OperationID = r.Plan.OperationID
+		result.Checkout = p.Branch
 		return nil
 	})
 	if err != nil {
@@ -305,9 +313,14 @@ func Continue(repo *git.Repository, opts Options) (result Result, err error) {
 	}
 	saved, e := Save(repo, opts)
 	if e != nil {
+		result.OperationID = saved.OperationID
+		result.CheckpointCreated = saved.CheckpointCreated
+		result.Message += " Saving to the remote did not complete. " + saved.Message
 		return result, e
 	}
 	result.Published = saved.Published
+	result.CheckpointCreated = saved.CheckpointCreated
+	result.Message += " " + saved.Message
 	return
 }
 func Abort(repo *git.Repository) (result Result, err error) {
@@ -329,7 +342,11 @@ func Abort(repo *git.Repository) (result Result, err error) {
 			if resolution == nil {
 				return fmt.Errorf("MERGE_STATE_MISSING: run recover")
 			}
-			result = Result{OperationID: r.Plan.OperationID, Checkout: p.Branch, Message: resolution.Resolution}
+			message := fmt.Sprintf("Git already aborted the merge on %q; verified the pre-merge state and closed its interrupted record.", p.Branch)
+			if resolution.Resolution == "merge-completed-externally" {
+				message = fmt.Sprintf("Git already completed the merge on %q. Kept current work and closed its interrupted record. Run 'wipstream save' to synchronize.", p.Branch)
+			}
+			result = Result{OperationID: r.Plan.OperationID, Checkout: p.Branch, Message: message}
 			return nil
 		}
 		if e = requireMerge(repo, p); e != nil {
@@ -364,7 +381,7 @@ func Abort(repo *git.Repository) (result Result, err error) {
 		if e = operations.Close(repo, r, "aborted", nil); e != nil {
 			return e
 		}
-		result = Result{OperationID: r.Plan.OperationID, Checkout: branch, Message: "Merge aborted; original state verified"}
+		result = Result{OperationID: r.Plan.OperationID, Checkout: branch, Message: fmt.Sprintf("Aborted the merge on %q and restored the verified pre-merge state.", branch)}
 		return nil
 	})
 	return
@@ -401,7 +418,7 @@ func Recover(repo *git.Repository, opts Options) (result Result, err error) {
 		}
 		if len(incomplete) == 0 {
 			if reclaimed {
-				result.Message = "Stale command lock archived; no incomplete operations"
+				result.Message = "Archived a stale command lock. No incomplete operations remain; current files and commits were kept. Run 'wipstream save' to synchronize."
 				return nil
 			}
 			return fmt.Errorf("NO_INCOMPLETE_OPERATION")
@@ -421,7 +438,7 @@ func Recover(repo *git.Repository, opts Options) (result Result, err error) {
 			for _, r := range incomplete {
 				ids = append(ids, r.Plan.OperationID+" ("+r.Plan.Command+", "+r.Phase+")")
 			}
-			return fmt.Errorf("OPERATION_SELECTION_REQUIRED: %s", strings.Join(ids, "; "))
+			return fmt.Errorf("OPERATION_SELECTION_REQUIRED: %s; choose the attempt to keep and close with 'wipstream recover --operation ID'", strings.Join(ids, "; "))
 		}
 		if e = confirm(opts, "Keep current files and refs and close "+chosen.Plan.OperationID+" ("+chosen.Plan.Command+", "+chosen.Phase+")?"); e != nil {
 			return e
@@ -437,7 +454,11 @@ func Recover(repo *git.Repository, opts Options) (result Result, err error) {
 		if e = operations.Close(repo, chosen, "recovered", &operations.Recovery{Resolution: "kept-current-state", Branch: branch, Head: head}); e != nil {
 			return e
 		}
-		result = Result{OperationID: chosen.Plan.OperationID, Checkout: branch, Message: "Kept current files and commits; handoff is not claimed"}
+		next := "retry 'wipstream save'"
+		if len(chosen.Plan.RemoteAdoption) > 0 {
+			next = "rerun 'wipstream init' for a fresh authority choice"
+		}
+		result = Result{OperationID: chosen.Plan.OperationID, Checkout: branch, Message: fmt.Sprintf("Closed the interrupted %q attempt; kept current files, staged work, commits, and refs. Remote synchronization remains unverified. Recover any other incomplete attempts, then %s.", chosen.Plan.Command, next)}
 		return nil
 	})
 	return

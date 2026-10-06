@@ -25,6 +25,7 @@ These commands need Go and Git. They do not run JavaScript or start VS Code.
 | Go test file | Behavior checked | Reference scenarios |
 | --- | --- | --- |
 | `internal/cli/cli_test.go` | All twelve registered commands and their flags; actual CLI dispatch, JSON results, pending merges, missing input, help, and failed Save diagnostics | `command-surface`, `command-handlers`, `public-command-sequences` |
+| `internal/cli/output_test.go` | Human results for all twelve commands, Init authority choices, actual checkpoint/push/no-op effects, pending merges, recovery guidance, and retained local work after failed handoffs; JSON receipt identity | `command-handlers`, `public-command-sequences`, `setup-ui`, `conflict-workflow` |
 | `internal/workflow/init_test.go` | Initialization without a remote HEAD cache, authority choices, local checkpoints, remote replacement approval, verified backup, ignored files, and changed approval state | `initialize-repository`, `setup-workflow`, `remote-adoption` |
 | `internal/workflow/get_test.go` | All-branch retrieval, remote-only branches, safe deletion, checkout fallback, and all-or-nothing refusal for unpublished or divergent work | `get-from-remote` |
 | `internal/workflow/save_test.go` | Publication across branches, imported remote changes, no-op Save, retained offline/divergent checkpoints, rejected commit hooks, and work changed during a message prompt | `commit-and-save` |

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/charmbracelet/huh"
 	"github.com/lewisl/wip-stream-go/internal/git"
+	"github.com/lewisl/wip-stream-go/internal/operations"
 	"github.com/lewisl/wip-stream-go/internal/workflow"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -138,21 +139,30 @@ func New() *cobra.Command {
 				result, e = workflow.Condense(repo, opts)
 			}
 			if e != nil {
-				if commandName == "save" && result.Message != "" {
-					fmt.Fprintln(cmd.ErrOrStderr(), result.Message)
+				if result.Message != "" && (commandName == "save" || commandName == "finish" || commandName == "reconcile" || commandName == "continue" || commandName == "init" && result.CheckpointCreated) {
+					fmt.Fprintln(cmd.ErrOrStderr(), "WARNING:", result.Message)
 				}
 				if result.OperationID != "" {
-					return fmt.Errorf("%w; inspect operation %s before retrying", e, result.OperationID)
+					// A completed merge may be followed by a failed Save. Offer
+					// recovery only for the actual incomplete attempt, never its
+					// already completed predecessor or an automatically aborted plan.
+					if receipt, readErr := operations.Read(repo, result.OperationID); readErr == nil && receipt.Incomplete() {
+						if receipt.PendingMerge != nil {
+							return fmt.Errorf("%w\nOperation %s is incomplete. Resolve and stage its conflicts, then run 'wipstream continue'; or run 'wipstream abort'.", e, result.OperationID)
+						}
+						return fmt.Errorf("%w\nOperation %s is incomplete. Inspect current files and refs. Once Git has no active operation or unresolved conflicts, run 'wipstream recover --operation %s' to keep current state, then retry.", e, result.OperationID, result.OperationID)
+					}
 				}
 				return e
 			}
 			if jsonOutput {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), result.Message)
-			if result.OperationID != "" {
-				fmt.Fprintln(cmd.OutOrStdout(), "Operation:", result.OperationID)
+			status := "SUCCESS:"
+			if result.Pending {
+				status = "PENDING:"
 			}
+			fmt.Fprintln(cmd.OutOrStdout(), status, result.Message)
 			return nil
 		}
 		switch name {

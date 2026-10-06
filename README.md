@@ -97,6 +97,18 @@ For example, keep and publish this computer's work:
 wipstream init --authority local-work -m "Checkpoint before setup"
 ```
 
+The completion message starts with `SUCCESS` and describes the work performed:
+
+```text
+SUCCESS: Initialized repository for remote "origin". Created a checkpoint on "main". Pushed "main" to "origin". All branches are synchronized; checked out "main". Safe to resume on another computer.
+```
+
+If no checkpoint or push was needed, the message says so. A merge awaiting
+resolution starts with `PENDING` and explains how to continue or abort. A failed
+command reports `ERROR`; any completed local work is described separately in a
+warning. See [command results](doc/commands.md#noninteractive-runs-and-results)
+for details.
+
 Before replacing local work with the remote's version, select an existing backup
 parent outside the project:
 

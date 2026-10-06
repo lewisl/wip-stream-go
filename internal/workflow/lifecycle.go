@@ -81,7 +81,7 @@ func Start(repo *git.Repository, name string) (result Result, err error) {
 		p := operations.NewPlan("Start Branch")
 		p.LocalRefUpdates = append(p.LocalRefUpdates, git.Update{Ref: git.Local(name), Proposed: git.Ptr(tip)})
 		p.Checkout = operations.Checkout{Before: base, After: name}
-		result = Result{OperationID: p.OperationID, Checkout: name, Message: "Started " + name + " from " + base}
+		result = Result{OperationID: p.OperationID, Checkout: name, Message: fmt.Sprintf("Started %q from parent %q and checked it out. No commit or push was made; use 'wipstream save' to publish your work.", name, base)}
 		return operations.Recorded(repo, p, func(r *operations.Receipt) error {
 			if e := mutation(repo, r, "checkout", "switch", "-c", name, tip); e != nil {
 				return e
@@ -156,7 +156,7 @@ func Update(repo *git.Repository, opts Options) (result Result, err error) {
 			return e
 		}
 		if contains {
-			result = Result{Checkout: branch, Message: "Already contains parent " + base}
+			result = Result{Checkout: branch, Message: fmt.Sprintf("Branch %q already contains parent %q; no merge was needed.", branch, base)}
 			return nil
 		}
 		target, e := repo.Hash(git.Local(base))
@@ -164,6 +164,9 @@ func Update(repo *git.Repository, opts Options) (result Result, err error) {
 			return e
 		}
 		result, e = merge(repo, "Update from Parent", branch, git.Local(base), target)
+		if e == nil && !result.Pending {
+			result.Message = fmt.Sprintf("Merged parent %q into %q. The merge is local; run 'wipstream save' to publish it.", base, branch)
+		}
 		return e
 	})
 	return
@@ -228,11 +231,14 @@ func Finish(repo *git.Repository, opts Options) (result Result, err error) {
 	}
 	saved, e := Save(repo, opts)
 	if e != nil {
+		result = saved
+		result.Message = fmt.Sprintf("Finish stopped before advancing parent %q. %s", base, saved.Message)
 		return result, fmt.Errorf("SAVE_HANDOFF_INCOMPLETE: %w", e)
 	}
 	if !saved.Published {
 		return result, fmt.Errorf("SAVE_HANDOFF_INCOMPLETE")
 	}
+	result.CheckpointCreated = saved.CheckpointCreated
 	err = locked(repo, "Finish Branch", true, func() error {
 		if e := preflight(repo, true, false); e != nil {
 			return e
@@ -297,8 +303,22 @@ func Finish(repo *git.Repository, opts Options) (result Result, err error) {
 			}
 			p.ConfigurationChanges = append(p.ConfigurationChanges, c)
 		}
-		result = Result{OperationID: p.OperationID, Checkout: base, Published: true, Message: "Finished " + branch + " into " + base}
-		return publishLifecycle(repo, p, remote)
+		result = Result{OperationID: p.OperationID, Checkout: base, CheckpointCreated: saved.CheckpointCreated}
+		if e := publishLifecycle(repo, p, remote); e != nil {
+			result.Message = "Finish did not complete; inspect the current local and remote state before retrying."
+			return e
+		}
+		result.Published = true
+		result.Message = fmt.Sprintf("Finished %q into %q locally and on remote %q. ", branch, base, remote)
+		if saved.CheckpointCreated {
+			result.Message += "Created and published a checkpoint before finishing. "
+		}
+		verb := "Retained"
+		if disposition == "delete" {
+			verb = "Deleted"
+		}
+		result.Message += fmt.Sprintf("%s %q locally and remotely; checked out %q. Safe to resume on another computer.", verb, branch, base)
+		return nil
 	})
 	return
 }
@@ -386,8 +406,13 @@ func Condense(repo *git.Repository, opts Options) (result Result, err error) {
 		p.LocalRefUpdates = append(p.LocalRefUpdates, git.Update{Ref: git.Local(branch), ExpectedOld: git.Ptr(old), Proposed: git.Ptr(newTip)})
 		p.RemoteRefUpdates = append(p.RemoteRefUpdates, git.RemoteUpdate{Ref: git.Local(branch), Expected: git.Ptr(old), Proposed: git.Ptr(newTip)})
 		p.DestructiveEffects = append(p.DestructiveEffects, operations.Effect{Kind: "rewrite-local-ref", Ref: git.Local(branch), Description: "Replace checkpoints"}, operations.Effect{Kind: "rewrite-remote-ref", Ref: git.Local(branch), Description: "Replace remote checkpoints"})
-		result = Result{OperationID: p.OperationID, Checkout: branch, Published: true, Message: "Condensed " + branch}
-		return publishLifecycle(repo, p, remote)
+		result = Result{OperationID: p.OperationID, Checkout: branch}
+		if e := publishLifecycle(repo, p, remote); e != nil {
+			return e
+		}
+		result.Published = true
+		result.Message = fmt.Sprintf("Condensed %d commits on %q into one commit with the same final files. Pushed the rewritten branch to %q; checked out %q.", n, branch, remote, branch)
+		return nil
 	})
 	return
 }

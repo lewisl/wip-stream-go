@@ -218,7 +218,7 @@ func reconcile(repo *git.Repository, command, remote, current, target string, br
 	if current != target {
 		p.DestructiveEffects = append(p.DestructiveEffects, operations.Effect{Kind: "replace-checkout", Ref: git.Local(current), Description: "Switch to " + target})
 	}
-	result := Result{OperationID: p.OperationID, Checkout: target, CheckpointCreated: checkpoint != nil, Published: command != "Get from Remote", Message: command + " completed"}
+	result := Result{OperationID: p.OperationID, Checkout: target, CheckpointCreated: checkpoint != nil, Published: command != "Get from Remote"}
 	e := operations.Recorded(repo, p, func(r *operations.Receipt) error {
 		if e := verifyInputs(repo, current, local, beforeRemote, remote); e != nil {
 			return e
@@ -278,7 +278,9 @@ func reconcile(repo *git.Repository, command, remote, current, target string, br
 	})
 	if e != nil {
 		result.Published = false
-		result.Message = "Local checkpoint retained; remote handoff incomplete. Do not resume work in another clone."
+		result.Message = handoffFailure(result.CheckpointCreated)
+	} else {
+		result.Message = synchronizationMessage(command, remote, p)
 	}
 	return result, e
 }
@@ -411,7 +413,7 @@ func Save(repo *git.Repository, opts Options) (result Result, err error) {
 	})
 	if err != nil {
 		result.Published = false
-		result.Message = "Remote handoff incomplete; any checkpoint remains local. Do not resume work in another clone."
+		result.Message = handoffFailure(result.CheckpointCreated)
 	}
 	return
 }
@@ -648,5 +650,9 @@ func Init(repo *git.Repository, opts Options) (result Result, err error) {
 		result, e = reconcile(repo, "Initialize Repository", remote, branch, def, branches, cp, config, head)
 		return e
 	})
+	if err != nil && result.CheckpointCreated {
+		result.Published = false
+		result.Message = "Initialization did not complete. " + handoffFailure(true)
+	}
 	return
 }

@@ -207,9 +207,9 @@ func adoptRemote(repo *git.Repository, opts Options, remote, branch, def string,
 	if now != fingerprint {
 		return result, fmt.Errorf("SETUP_STATE_CHANGED")
 	}
-	result = Result{OperationID: p.OperationID, Checkout: def, Message: "Adopted approved remote state"}
+	result = Result{OperationID: p.OperationID, Checkout: def, Message: fmt.Sprintf("Initialized repository using remote %q. Replaced local branches and working files with the approved remote state; preserved ignored files. Checked out %q. No commit or push was made.", remote, def)}
 	if backupInfo["path"] != "" {
-		result.Message += "; verified backup at " + backupInfo["path"]
+		result.Message += " Kept a verified backup at " + backupInfo["path"] + "."
 	}
 	err = operations.Recorded(repo, p, func(r *operations.Receipt) error {
 		if e := revalidate(); e != nil {

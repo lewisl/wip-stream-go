@@ -13,10 +13,13 @@ or real development repository was used.
 Checks passed:
 
 - `go build ./...`
-- `go test -count=1 ./...` and `go test -race -count=1 ./...`: 62 top-level
-  Go test functions and 98 named subtests passed, with zero skipped on Linux.
+- `go test -race -count=1 ./...`: 72 top-level Go test functions and 111 named
+  subtests passed, with zero skipped tests on Linux. The executable package has
+  no test functions; CLI dispatch is exercised in `internal/cli`.
   This covers all twelve Go commands, CLI arguments and flags, command-specific
-  success/refusal behavior, Git transactions, and receipt validation.
+  success/refusal behavior, human outcome messages, Git transactions, and
+  receipt validation. The preceding 62-test/98-subtest suite also passed without
+  the race detector using `go test -count=1 ./...`.
   See [the Go testing guide](testing.md) for the scenario mapping and remaining
   gaps relative to the reference suite.
 - `go vet ./...`
@@ -29,8 +32,18 @@ Checks passed:
   safety changes and rebuild.
 
 The Go command suite above was expanded after the original interoperability
-and VS Code runs recorded below. That expansion was validated using Go and Git;
-the previously recorded extension runs were not repeated for the test additions.
+and VS Code runs recorded below. The command-output changes were checked using
+Go and Git, including local checkpoint retention when Init or Finish cannot
+push and completed local Reconcile/Continue merges whose handoff fails. Recovery
+diagnostics select the failed Save receipt rather than the completed merge.
+A rebuilt executable also passed a disposable-fixture smoke test for Init's
+checkpoint/push, a no-op Save, and the `ERROR` prefix and exit status.
+The previously recorded extension runs were not repeated for these changes.
+
+The saved cloud installation script was rerun successfully after the output
+changes. Module verification, artifact checksums, VS Code installation of the
+unchanged VSIX, and rebuilding the Go executable all passed. Publication and
+restoration into a fresh cloud task remain separate product actions.
 
 ## Extension → Go → extension
 
