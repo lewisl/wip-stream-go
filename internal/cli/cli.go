@@ -163,7 +163,7 @@ func New() *cobra.Command {
 				status = "PENDING:"
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), status, result.Message)
-			return nil
+ 			return nil
 		}
 		switch name {
 		case "init":
