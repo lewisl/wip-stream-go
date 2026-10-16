@@ -1,5 +1,27 @@
 # Validation evidence
 
+## Naming refactor, 2026-10-16
+
+Validated on macOS arm64 with Go 1.27.1, Git 2.55.0, and Node 22.15.1.
+The baseline Go suite passed before the refactor. After the refactor:
+
+- `go fmt ./...`, `go build ./...`, and `go vet ./...` passed.
+- `go test -count=1 ./...` passed.
+- `go test -race -count=1 ./...` passed.
+- A rebuilt `bin/wipstream` passed all fourteen `test/interop.js` scenarios
+  against the existing compiled sibling implementation, in both directions.
+- A source-token comparison against the pre-refactor snapshot confirmed that
+  all 32 Go files retained their non-identifier tokens and all 18 JSON-tagged
+  struct definitions were unchanged. Comments and formatting were excluded.
+
+The baseline interoperability run exposed an outdated diagnostic assertion:
+it expected "handoff incomplete" while the CLI reports "remote handoff did not
+complete". The assertion was updated; its recovery and receipt checks remain.
+All workflow targets were disposable fixtures. The sibling checkout was left
+unchanged. The VS Code host harness was not rerun for this refactor.
+
+## Earlier Linux validation
+
 Validated on Linux amd64 with Go 1.27.1, Git 2.52.0, Node 24.19.0,
 VS Code 1.108.0, and the repository-provided WipStream 0.2.9 VSIX.
 
@@ -79,4 +101,5 @@ TypeScript Undo, and exact binary/deleted/whitespace checkpoint restoration.
 
 These are tested scenarios, not proof of every possible platform or concurrent
 failure state. Native keyboard and visual command-palette inspection are outside
-this automated suite. Windows/macOS runtime behavior has not been validated.
+this automated suite. The earlier runs covered Linux; macOS validation is
+recorded above. Windows runtime behavior has not been validated.

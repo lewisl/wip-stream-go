@@ -46,7 +46,7 @@ func TestUndoGetRemovesImportedBranchAndTrackingConfiguration(t *testing.T) {
 	if result.Checkout != "main" || command(t, f.first.Root, "rev-parse", "main") != before {
 		t.Fatal("Undo did not restore main")
 	}
-	assertAbsent(t, f.first, git.Local("new-topic"))
+	assertAbsent(t, f.first, git.BranchRef("new-topic"))
 	keys, err := f.first.BranchConfigKeys("new-topic")
 	if err != nil || len(keys) != 0 {
 		t.Fatal("imported tracking config not removed", keys, err)

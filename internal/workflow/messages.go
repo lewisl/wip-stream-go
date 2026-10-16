@@ -9,10 +9,10 @@ import (
 
 // Describe verified effects, including a no-op, rather than merely naming the
 // command. Call this only after synchronization and receipt completion succeed.
-func synchronizationMessage(command, remote string, p operations.Plan) string {
+func synchronizationMessage(command, remoteName string, p operations.Plan) string {
 	parts := []string{}
 	if command == "Initialize Repository" {
-		parts = append(parts, fmt.Sprintf("Initialized repository for remote %q.", remote))
+		parts = append(parts, fmt.Sprintf("Initialized repository for remote %q.", remoteName))
 	}
 	if p.Checkpoint != nil {
 		parts = append(parts, fmt.Sprintf("Created a checkpoint on %q.", p.Checkpoint.Branch))
@@ -24,7 +24,7 @@ func synchronizationMessage(command, remote string, p operations.Plan) string {
 		for _, u := range p.RemoteRefUpdates {
 			names = append(names, strings.TrimPrefix(u.Ref, "refs/heads/"))
 		}
-		parts = append(parts, fmt.Sprintf("Pushed %s to %q.", quotedNames(names), remote))
+		parts = append(parts, fmt.Sprintf("Pushed %s to %q.", quotedNames(names), remoteName))
 	} else if command != "Get from Remote" {
 		parts = append(parts, "No push was needed.")
 	}
@@ -50,9 +50,9 @@ func synchronizationMessage(command, remote string, p operations.Plan) string {
 		}
 	}
 	if len(changes) > 0 {
-		parts = append(parts, fmt.Sprintf("Retrieved from %q: %s.", remote, strings.Join(changes, "; ")))
+		parts = append(parts, fmt.Sprintf("Retrieved from %q: %s.", remoteName, strings.Join(changes, "; ")))
 	} else if command == "Get from Remote" {
-		parts = append(parts, fmt.Sprintf("Already up to date with %q.", remote))
+		parts = append(parts, fmt.Sprintf("Already up to date with %q.", remoteName))
 	}
 	parts = append(parts, fmt.Sprintf("All branches are synchronized; checked out %q.", p.Checkout.After))
 	if command != "Get from Remote" {

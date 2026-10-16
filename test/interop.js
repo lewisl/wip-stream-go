@@ -115,7 +115,7 @@ const cases = [
   ["Go interruption -> TypeScript recover -> Go", async ({ clone }) => {
     const a = await clone("a"); go(a.dir, ["init"]); write(a.dir, "work.txt", "checkpoint");
     const hook = path.join(a.dir, ".git/hooks/pre-push"); write(path.dirname(hook), path.basename(hook), "#!/bin/sh\nexit 1\n"); fs.chmodSync(hook, 0o755);
-    assert.match(go(a.dir, ["save", "-m", "checkpoint"], 1), /handoff incomplete/); const receipts = await operations.inspectIncompleteOperations(a.repo); assert.equal(receipts.length, 1);
+    assert.match(go(a.dir, ["save", "-m", "checkpoint"], 1), /remote handoff did not complete/); const receipts = await operations.inspectIncompleteOperations(a.repo); assert.equal(receipts.length, 1);
     fs.unlinkSync(hook); await recovery.recoverIncompleteOperation(a.repo, receipts[0].plan.operationId); go(a.dir, ["save"]);
   }],
   ["TypeScript command lock blocks Go; Go can resume after release", async ({ clone }) => {

@@ -33,7 +33,7 @@ func TestSaveGetAndBranchDeletion(t *testing.T) {
 	if command(t, f.second.Root, "show", "HEAD:work.txt") != "checkpoint" {
 		t.Fatal("missing work")
 	}
-	if _, e = f.second.Object(git.Local("feature")); e != nil {
+	if _, e = f.second.Object(git.BranchRef("feature")); e != nil {
 		t.Fatal(e)
 	}
 }
@@ -132,7 +132,7 @@ func TestGetDeletedCheckoutFallsBackToParentOrDefault(t *testing.T) {
 			if result.Checkout != expected {
 				t.Fatal(result)
 			}
-			assertAbsent(t, f.first, git.Local("child"))
+			assertAbsent(t, f.first, git.BranchRef("child"))
 			assertParity(t, f)
 		})
 	}

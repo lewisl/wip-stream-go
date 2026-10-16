@@ -32,6 +32,18 @@ are authoritative; the app does not save editor buffers.
 
 ```sh
 wipstream init
+```
+
+If a choice is needed, WipStream prompts you in an interactive terminal to keep
+this computer's work, use the remote's version, resolve differences first, or
+cancel. You don't need to choose an option beforehand. A clean matching clone
+needs no authority decision.
+
+To supply your choice directly, use `--authority`. This is useful for scripts
+and other noninteractive runs, where an explicit choice is required if an
+authority decision is needed. For example:
+
+```sh
 wipstream init --remote upstream --authority local-work -m "Setup checkpoint"
 ```
 
@@ -45,10 +57,6 @@ wipstream init --remote upstream --authority local-work -m "Setup checkpoint"
 | `--backup-parent PATH` | Existing parent directory outside the project for a verified complete backup before remote replacement. |
 | `--discard-local-work` | Explicitly approve remote replacement without a backup. |
 | `-m MESSAGE`, `--message MESSAGE` | Message for a local-work checkpoint when files need committing. |
-
-A clean matching clone needs no authority decision. If a decision is needed,
-an interactive terminal offers the choices above. Noninteractive runs require
-an explicit `--authority`.
 
 For remote authority, tracked files are replaced, non-ignored untracked files
 and local-only branches are removed, and ignored files are preserved. Collisions

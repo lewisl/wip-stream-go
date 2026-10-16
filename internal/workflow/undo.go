@@ -18,7 +18,7 @@ func afterUpdates(r *operations.Receipt) ([]git.Update, error) {
 		updates = append(updates, r.Outcome.AdditionalLocalRefUpdates...)
 	}
 	if c := r.Plan.Checkpoint; c != nil {
-		updates = append(updates, git.Update{Ref: git.Local(c.Branch), ExpectedOld: git.Ptr(c.Before), Proposed: git.Ptr(c.After)})
+		updates = append(updates, git.Update{Ref: git.BranchRef(c.Branch), ExpectedOld: git.Ptr(c.Before), Proposed: git.Ptr(c.After)})
 	}
 	byRef := map[string]git.Update{}
 	result := []git.Update{}
@@ -101,7 +101,7 @@ func undoCandidate(repo *git.Repository) (*operations.Receipt, error) {
 		}
 	}
 	if h := r.Plan.RemoteHead; h != nil {
-		v, e := repo.Symbolic(git.Tracking(h.Remote, "HEAD"))
+		v, e := repo.Symbolic(git.RemoteTrackingRef(h.Remote, "HEAD"))
 		if e != nil {
 			return nil, e
 		}
@@ -134,28 +134,28 @@ func Undo(repo *git.Repository, opts Options) (result Result, err error) {
 		if e = confirm(opts, "Undo "+original.Plan.Command+" and restore its recorded before-state?"); e != nil {
 			return e
 		}
-		remote, e := repo.ConfigOne("wipstream.remote")
+		remoteName, e := repo.ConfigOne("wipstream.remote")
 		if e != nil {
 			return e
 		}
-		if remote == "" {
-			remote = "origin"
+		if remoteName == "" {
+			remoteName = "origin"
 		}
-		if e = repo.Fetch(remote); e != nil {
+		if e = repo.Fetch(remoteName); e != nil {
 			return e
 		}
 		if original.Outcome != nil && original.Outcome.CompletedRemoteRefs != nil {
-			recorded := []git.Ref{}
+			recordedFetchedRefs := []git.Ref{}
 			for _, r := range original.Outcome.CompletedRemoteRefs {
-				if strings.HasPrefix(r.Ref, git.Tracking(remote, "")) {
-					recorded = append(recorded, r)
+				if strings.HasPrefix(r.Ref, git.RemoteTrackingRef(remoteName, "")) {
+					recordedFetchedRefs = append(recordedFetchedRefs, r)
 				}
 			}
-			current, e := repo.Refs(git.Tracking(remote, ""))
+			fetchedRefs, e := repo.Refs(git.RemoteTrackingRef(remoteName, ""))
 			if e != nil {
 				return e
 			}
-			if !slices.Equal(recorded, current) {
+			if !slices.Equal(recordedFetchedRefs, fetchedRefs) {
 				return fmt.Errorf("REMOTE_CHANGED_AFTER_OPERATION")
 			}
 		}
@@ -170,11 +170,11 @@ func Undo(repo *git.Repository, opts Options) (result Result, err error) {
 		p := operations.NewPlan("Undo " + original.Plan.Command)
 		p.Checkout = operations.Checkout{Before: original.Plan.Checkout.After, After: original.Plan.Checkout.Before}
 		for _, u := range original.Plan.RemoteRefUpdates {
-			actual, e := repo.Object(git.Tracking(remote, strings.TrimPrefix(u.Ref, "refs/heads/")))
+			fetchedTip, e := repo.Object(git.RemoteTrackingRef(remoteName, strings.TrimPrefix(u.Ref, "refs/heads/")))
 			if e != nil {
 				return e
 			}
-			if !git.Same(actual, u.Proposed) {
+			if !git.Same(fetchedTip, u.Proposed) {
 				return fmt.Errorf("REMOTE_CHANGED_AFTER_OPERATION: %s", u.Ref)
 			}
 			p.RemoteRefUpdates = append(p.RemoteRefUpdates, git.RemoteUpdate{Ref: u.Ref, Expected: u.Proposed, Proposed: u.Expected})
@@ -206,10 +206,10 @@ func Undo(repo *git.Repository, opts Options) (result Result, err error) {
 		result = Result{OperationID: p.OperationID, Checkout: p.Checkout.After, Message: message}
 		return operations.Recorded(repo, p, func(r *operations.Receipt) error {
 			if len(p.RemoteRefUpdates) > 0 {
-				if e := operations.Boundary(repo, r, "remote-push", func() error { return repo.Push(remote, p.RemoteRefUpdates, false) }); e != nil {
+				if e := operations.Boundary(repo, r, "remote-push", func() error { return repo.Push(remoteName, p.RemoteRefUpdates, false) }); e != nil {
 					return e
 				}
-				if e := operations.Boundary(repo, r, "remote-fetch", func() error { return repo.Fetch(remote) }); e != nil {
+				if e := operations.Boundary(repo, r, "remote-fetch", func() error { return repo.Fetch(remoteName) }); e != nil {
 					return e
 				}
 			}
@@ -219,7 +219,7 @@ func Undo(repo *git.Repository, opts Options) (result Result, err error) {
 			}
 			changing := false
 			for _, u := range p.LocalRefUpdates {
-				if u.Ref == git.Local(branch) {
+				if u.Ref == git.BranchRef(branch) {
 					changing = true
 				}
 			}

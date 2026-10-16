@@ -48,9 +48,15 @@ func Value(s *string) string {
 	}
 	return *s
 }
-func Same(a, b *string) bool                { return (a == nil && b == nil) || (a != nil && b != nil && *a == *b) }
-func Local(branch string) string            { return "refs/heads/" + branch }
-func Tracking(remote, branch string) string { return "refs/remotes/" + remote + "/" + branch }
+func Same(a, b *string) bool { return (a == nil && b == nil) || (a != nil && b != nil && *a == *b) }
+
+// BranchRef names a branch in either the local repository or a remote repository.
+func BranchRef(branch string) string { return "refs/heads/" + branch }
+
+// RemoteTrackingRef names the local cache of a remote ref.
+func RemoteTrackingRef(remoteName, branch string) string {
+	return "refs/remotes/" + remoteName + "/" + branch
+}
 func Open(ctx context.Context, dir string) (*Repository, error) {
 	r := &Repository{Root: dir, Context: ctx}
 	root, err := r.Run("rev-parse", "--show-toplevel")
@@ -258,12 +264,14 @@ func (r *Repository) Ancestor(a, b string) (bool, error) {
 	}
 	return e == nil, e
 }
-func (r *Repository) Fetch(remote string) error {
-	_, e := r.Mutate(nil, "fetch", "--prune", remote, "+refs/heads/*:refs/remotes/"+remote+"/*")
+func (r *Repository) Fetch(remoteName string) error {
+	_, e := r.Mutate(nil, "fetch", "--prune", remoteName, "+refs/heads/*:refs/remotes/"+remoteName+"/*")
 	return e
 }
-func (r *Repository) Default(remote string) (string, error) {
-	s, e := r.Run("ls-remote", "--symref", remote, "HEAD")
+
+// QueryRemoteDefault contacts the remote to read its default branch name.
+func (r *Repository) QueryRemoteDefault(remoteName string) (string, error) {
+	s, e := r.Run("ls-remote", "--symref", remoteName, "HEAD")
 	if e != nil {
 		return "", e
 	}
@@ -272,14 +280,16 @@ func (r *Repository) Default(remote string) (string, error) {
 			return strings.TrimSuffix(strings.TrimPrefix(line, "ref: refs/heads/"), "\tHEAD"), nil
 		}
 	}
-	return "", fmt.Errorf("REMOTE_HEAD_MISSING: remote %s has no ordinary default branch", remote)
+	return "", fmt.Errorf("REMOTE_HEAD_MISSING: remote %s has no ordinary default branch", remoteName)
 }
-func (r *Repository) CachedDefault(remote string) (string, error) {
-	p, e := r.Symbolic(Tracking(remote, "HEAD"))
+
+// CachedRemoteDefault reads the locally cached remote HEAD without contacting the remote.
+func (r *Repository) CachedRemoteDefault(remoteName string) (string, error) {
+	p, e := r.Symbolic(RemoteTrackingRef(remoteName, "HEAD"))
 	if e != nil {
 		return "", e
 	}
-	prefix := Tracking(remote, "")
+	prefix := RemoteTrackingRef(remoteName, "")
 	if p == nil || !strings.HasPrefix(*p, prefix) {
 		return "", fmt.Errorf("REMOTE_HEAD_MISSING: initialize the remote default branch")
 	}
@@ -345,7 +355,7 @@ func (r *Repository) UpdateRefs(updates []Update) error {
 	_, e := r.Mutate([]byte(strings.Join(lines, "\n")+"\n"), "update-ref", "--stdin")
 	return e
 }
-func (r *Repository) Push(remote string, updates []RemoteUpdate, dry bool) error {
+func (r *Repository) Push(remoteName string, updates []RemoteUpdate, dry bool) error {
 	if len(updates) == 0 {
 		return nil
 	}
@@ -363,7 +373,7 @@ func (r *Repository) Push(remote string, updates []RemoteUpdate, dry bool) error
 	for _, u := range updates {
 		args = append(args, "--force-with-lease="+u.Ref+":"+Value(u.Expected))
 	}
-	args = append(args, remote)
+	args = append(args, remoteName)
 	for _, u := range updates {
 		args = append(args, Value(u.Proposed)+":"+u.Ref)
 	}

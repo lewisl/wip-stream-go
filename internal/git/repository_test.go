@@ -35,7 +35,7 @@ func TestLocalRefTransactionRejectsStaleObjectAtomically(t *testing.T) {
 	gitCommand(t, repo.Root, "commit", "-m", "advance")
 	tip := gitCommand(t, repo.Root, "rev-parse", "HEAD")
 	before := gitCommand(t, repo.Root, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads/")
-	err := repo.UpdateRefs([]Update{{Ref: Local("main"), ExpectedOld: Ptr(old), Proposed: Ptr(tip)}, {Ref: Local("companion"), Proposed: Ptr(tip)}})
+	err := repo.UpdateRefs([]Update{{Ref: BranchRef("main"), ExpectedOld: Ptr(old), Proposed: Ptr(tip)}, {Ref: BranchRef("companion"), Proposed: Ptr(tip)}})
 	if err == nil {
 		t.Fatal("stale transaction accepted")
 	}
@@ -69,7 +69,7 @@ func TestRemotePushRejectsStaleLeasesAtomically(t *testing.T) {
 			}
 			gitCommand(t, peer, "push", "origin", branch)
 			before := gitCommand(t, remote, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads/")
-			err := repo.Push("origin", []RemoteUpdate{{Ref: Local("main"), Expected: Ptr(old), Proposed: Ptr(tip)}, {Ref: Local("companion"), Proposed: Ptr(tip)}}, false)
+			err := repo.Push("origin", []RemoteUpdate{{Ref: BranchRef("main"), Expected: Ptr(old), Proposed: Ptr(tip)}, {Ref: BranchRef("companion"), Proposed: Ptr(tip)}}, false)
 			if err == nil {
 				t.Fatal("stale remote lease accepted")
 			}
@@ -92,7 +92,7 @@ func TestLocalRefTransactionCreatesReplacesAndDeletes(t *testing.T) {
 	gitCommand(t, repo.Root, "add", ".")
 	gitCommand(t, repo.Root, "commit", "-m", "advance")
 	tip := gitCommand(t, repo.Root, "rev-parse", "HEAD")
-	err := repo.UpdateRefs([]Update{{Ref: Local("create"), Proposed: Ptr(tip)}, {Ref: Local("replace"), ExpectedOld: Ptr(old), Proposed: Ptr(tip)}, {Ref: Local("delete"), ExpectedOld: Ptr(old)}})
+	err := repo.UpdateRefs([]Update{{Ref: BranchRef("create"), Proposed: Ptr(tip)}, {Ref: BranchRef("replace"), ExpectedOld: Ptr(old), Proposed: Ptr(tip)}, {Ref: BranchRef("delete"), ExpectedOld: Ptr(old)}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestLocalRefTransactionCreatesReplacesAndDeletes(t *testing.T) {
 			t.Fatal("transaction did not update", branch)
 		}
 	}
-	deleted, err := repo.Object(Local("delete"))
+	deleted, err := repo.Object(BranchRef("delete"))
 	if err != nil || deleted != nil {
 		t.Fatal("transaction did not delete branch", deleted, err)
 	}

@@ -619,6 +619,27 @@ Likewise:
 
 > Git subprocess mechanics should be centralized sufficiently that workflow code expresses WipStream semantics rather than repeated command-line plumbing.
 
+### 17.1 Local and remote naming
+
+Unqualified operation and value names refer to the local clone by default:
+`repo`, `currentBranch`, `branchTips`, and `parentTip`.
+
+Use `remoteName` for a configured remote such as `origin`. Qualify remote state
+with names such as `fetchedTips`, `previousFetchedTips`, and `remoteDefault`.
+`QueryRemote...` functions contact the remote; `CachedRemote...` functions read
+locally cached information without contacting it. `Fetch` and `Push` already
+describe remote operations. Cached or previously fetched information may be stale.
+
+Ref constructors describe namespaces: `BranchRef` produces `refs/heads/...`,
+which can address a branch in either repository; `RemoteTrackingRef` produces
+`refs/remotes/...`, the local cache of remote refs. Helpers that accept arbitrary
+ref namespaces use neutral names such as `refTips`. Explicit local/remote names
+remain useful when comparing both sides.
+
+These conventions apply to internal Go identifiers. Preserve protocol struct
+fields, JSON tags and keys, Git configuration keys, ref paths, and other shared
+persistent names for compatibility with the TypeScript implementation.
+
 ## 18. Porting Strategy
 
 The port SHOULD proceed incrementally.

@@ -8,7 +8,7 @@ import (
 )
 
 func merge(repo *git.Repository, command, branch, target, targetCommit string) (result Result, err error) {
-	before, e := repo.Hash(git.Local(branch))
+	before, e := repo.Hash(git.BranchRef(branch))
 	if e != nil {
 		return result, e
 	}
@@ -22,7 +22,7 @@ func merge(repo *git.Repository, command, branch, target, targetCommit string) (
 	}
 	p := operations.NewPlan(command)
 	p.Checkout = operations.Checkout{Before: branch, After: branch}
-	p.DestructiveEffects = append(p.DestructiveEffects, operations.Effect{Kind: "rewrite-local-ref", Ref: git.Local(branch), Description: "Merge " + target + " into " + branch})
+	p.DestructiveEffects = append(p.DestructiveEffects, operations.Effect{Kind: "rewrite-local-ref", Ref: git.BranchRef(branch), Description: "Merge " + target + " into " + branch})
 	pending := &operations.PendingMerge{Kind: "merge", Command: command, Branch: branch, MergeTarget: target, MergeTargetCommit: targetCommit, PreHead: before, PreIndexTree: index, PreStatus: status, Conflicts: []string{}}
 	result = Result{OperationID: p.OperationID, Checkout: branch}
 	err = operations.Recorded(repo, p, func(r *operations.Receipt) error {
@@ -59,11 +59,11 @@ func merge(repo *git.Repository, command, branch, target, targetCommit string) (
 			}
 			return e
 		}
-		after, e := repo.Hash(git.Local(branch))
+		after, e := repo.Hash(git.BranchRef(branch))
 		if e != nil {
 			return e
 		}
-		r.Outcome = &operations.Outcome{AdditionalLocalRefUpdates: []git.Update{{Ref: git.Local(branch), ExpectedOld: git.Ptr(before), Proposed: git.Ptr(after)}}}
+		r.Outcome = &operations.Outcome{AdditionalLocalRefUpdates: []git.Update{{Ref: git.BranchRef(branch), ExpectedOld: git.Ptr(before), Proposed: git.Ptr(after)}}}
 		return operations.Complete(repo, r)
 	})
 	return
@@ -73,7 +73,7 @@ func Reconcile(repo *git.Repository, opts Options) (result Result, err error) {
 		if e := preflight(repo, true, false); e != nil {
 			return e
 		}
-		remote, e := selectedRemote(repo)
+		remoteName, e := selectedRemoteName(repo)
 		if e != nil {
 			return e
 		}
@@ -81,14 +81,14 @@ func Reconcile(repo *git.Repository, opts Options) (result Result, err error) {
 		if e != nil {
 			return e
 		}
-		previous, e := tips(repo, git.Tracking(remote, ""))
+		previousFetchedTips, e := refTips(repo, git.RemoteTrackingRef(remoteName, ""))
 		if e != nil {
 			return e
 		}
-		if e = repo.Fetch(remote); e != nil {
+		if e = repo.Fetch(remoteName); e != nil {
 			return e
 		}
-		branches, e := inventory(repo, remote, previous)
+		branches, e := inventory(repo, remoteName, previousFetchedTips)
 		if e != nil {
 			return e
 		}
@@ -101,10 +101,10 @@ func Reconcile(repo *git.Repository, opts Options) (result Result, err error) {
 				return fmt.Errorf("OTHER_DIVERGENCE: %s", b.Name)
 			}
 		}
-		if current == nil || current.Relation != "diverged" || current.Remote == nil {
+		if current == nil || current.Relation != "diverged" || current.FetchedTip == nil {
 			return fmt.Errorf("CURRENT_BRANCH_NOT_DIVERGED: run save")
 		}
-		result, e = merge(repo, "Reconcile with Remote", branch, git.Tracking(remote, branch), *current.Remote)
+		result, e = merge(repo, "Reconcile with Remote", branch, git.RemoteTrackingRef(remoteName, branch), *current.FetchedTip)
 		return e
 	})
 	if err != nil || result.Pending {
@@ -186,7 +186,7 @@ func externalMerge(repo *git.Repository, r *operations.Receipt) (*operations.Rec
 	if branch != p.Branch {
 		return nil, nil
 	}
-	head, e := repo.Hash(git.Local(branch))
+	head, e := repo.Hash(git.BranchRef(branch))
 	if e != nil {
 		return nil, e
 	}
@@ -294,11 +294,11 @@ func Continue(repo *git.Repository, opts Options) (result Result, err error) {
 			if e = operations.Phase(repo, r, "after-merge"); e != nil {
 				return e
 			}
-			after, e := repo.Hash(git.Local(p.Branch))
+			after, e := repo.Hash(git.BranchRef(p.Branch))
 			if e != nil {
 				return e
 			}
-			r.Outcome = &operations.Outcome{AdditionalLocalRefUpdates: []git.Update{{Ref: git.Local(p.Branch), ExpectedOld: git.Ptr(p.PreHead), Proposed: git.Ptr(after)}}}
+			r.Outcome = &operations.Outcome{AdditionalLocalRefUpdates: []git.Update{{Ref: git.BranchRef(p.Branch), ExpectedOld: git.Ptr(p.PreHead), Proposed: git.Ptr(after)}}}
 			if e = operations.Complete(repo, r); e != nil {
 				return e
 			}

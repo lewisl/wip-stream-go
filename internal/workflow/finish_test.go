@@ -25,7 +25,7 @@ func TestFinishRetainAndDeleteThenUndo(t *testing.T) {
 			assertParity(t, f)
 			assertReceipt(t, f.first, result.OperationID, "completed")
 			if disposition == "delete" {
-				assertAbsent(t, f.first, git.Local("feature"))
+				assertAbsent(t, f.first, git.BranchRef("feature"))
 				keys, err := f.first.BranchConfigKeys("feature")
 				if err != nil || len(keys) != 0 {
 					t.Fatal("deleted branch configuration retained", keys, err)

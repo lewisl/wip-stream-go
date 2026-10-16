@@ -100,7 +100,9 @@ type Receipt struct {
 }
 
 func Now() string { return time.Now().UTC().Format("2006-01-02T15:04:05.000Z") }
-func ID() string  { return fmt.Sprintf("%x", randomBytes()) }
+
+func ID() string { return fmt.Sprintf("%x", randomBytes()) }
+
 func randomBytes() []byte {
 	b := make([]byte, 16)
 	if _, e := rand.Read(b); e != nil {
@@ -114,7 +116,9 @@ var idPattern = regexp.MustCompile("^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
 func NewPlan(command string) Plan {
 	return Plan{SchemaVersion: 2, OperationID: ID(), Command: command, CreatedAt: Now(), LocalRefUpdates: []git.Update{}, RemoteRefUpdates: []git.RemoteUpdate{}, ConfigurationChanges: []Configuration{}, DestructiveEffects: []Effect{}}
 }
+
 func (r *Receipt) Incomplete() bool { return r.Status == "planned" || r.Status == "in-progress" }
+
 func required(raw map[string]json.RawMessage, keys ...string) error {
 	for _, key := range keys {
 		v, ok := raw[key]
@@ -124,6 +128,7 @@ func required(raw map[string]json.RawMessage, keys ...string) error {
 	}
 	return nil
 }
+
 func Decode(data []byte, id string) (*Receipt, error) {
 	var raw map[string]json.RawMessage
 	if e := json.Unmarshal(data, &raw); e != nil {
@@ -246,10 +251,12 @@ func Decode(data []byte, id string) (*Receipt, error) {
 	}
 	return &r, nil
 }
+
 func Directory(repo *git.Repository) (string, error) {
 	d, e := repo.CommonDir()
 	return filepath.Join(d, "wipstream", "operations"), e
 }
+
 func Path(repo *git.Repository, id string) (string, error) {
 	if !idPattern.MatchString(id) {
 		return "", fmt.Errorf("INVALID_OPERATION_ID")
@@ -257,6 +264,7 @@ func Path(repo *git.Repository, id string) (string, error) {
 	d, e := Directory(repo)
 	return filepath.Join(d, id+".json"), e
 }
+
 func Read(repo *git.Repository, id string) (*Receipt, error) {
 	p, e := Path(repo, id)
 	if e != nil {
@@ -272,6 +280,7 @@ func Read(repo *git.Repository, id string) (*Receipt, error) {
 	}
 	return r, nil
 }
+
 func Write(repo *git.Repository, r *Receipt, exclusive bool) error {
 	p, e := Path(repo, r.Plan.OperationID)
 	if e != nil {
@@ -322,10 +331,12 @@ func Write(repo *git.Repository, r *Receipt, exclusive bool) error {
 	defer d.Close()
 	return d.Sync()
 }
+
 func Begin(repo *git.Repository, p Plan) (*Receipt, error) {
 	r := &Receipt{SchemaVersion: 1, Plan: p, Phase: "planned", Status: "planned", Events: []Event{{"planned", Now()}}}
 	return r, Write(repo, r, true)
 }
+
 func List(repo *git.Repository) ([]*Receipt, error) {
 	d, e := Directory(repo)
 	if e != nil {
@@ -350,6 +361,7 @@ func List(repo *git.Repository) ([]*Receipt, error) {
 	}
 	return receipts, nil
 }
+
 func Phase(repo *git.Repository, r *Receipt, next string) error {
 	valid := false
 	if next == "completed" || strings.HasPrefix(next, "before-") {
@@ -369,6 +381,7 @@ func Phase(repo *git.Repository, r *Receipt, next string) error {
 	r.Events = append(r.Events, Event{next, Now()})
 	return Write(repo, r, false)
 }
+
 func Boundary(repo *git.Repository, r *Receipt, name string, fn func() error) error {
 	if e := Phase(repo, r, "before-"+name); e != nil {
 		return e
@@ -378,6 +391,7 @@ func Boundary(repo *git.Repository, r *Receipt, name string, fn func() error) er
 	}
 	return Phase(repo, r, "after-"+name)
 }
+
 func Close(repo *git.Repository, r *Receipt, status string, recovery *Recovery) error {
 	if status == "undone" {
 		if r.Status != "completed" {
@@ -395,6 +409,7 @@ func Close(repo *git.Repository, r *Receipt, status string, recovery *Recovery) 
 	r.Events = append(r.Events, Event{status, Now()})
 	return Write(repo, r, false)
 }
+
 func Recorded(repo *git.Repository, p Plan, fn func(*Receipt) error) error {
 	r, e := Begin(repo, p)
 	if e != nil {
@@ -408,9 +423,11 @@ func Recorded(repo *git.Repository, p Plan, fn func(*Receipt) error) error {
 	}
 	return e
 }
+
 func RecoveryRef(id string, ordinal int) string {
 	return fmt.Sprintf("refs/wipstream/recovery/%s/%04d", id, ordinal)
 }
+
 func ApplyLocal(repo *git.Repository, r *Receipt) error {
 	updates := []git.Update{}
 	for i, u := range r.Plan.LocalRefUpdates {
@@ -421,6 +438,7 @@ func ApplyLocal(repo *git.Repository, r *Receipt) error {
 	updates = append(updates, r.Plan.LocalRefUpdates...)
 	return Boundary(repo, r, "local-refs", func() error { return repo.UpdateRefs(updates) })
 }
+
 func ApplyConfig(repo *git.Repository, r *Receipt) error {
 	if len(r.Plan.ConfigurationChanges) == 0 {
 		return nil
@@ -448,13 +466,14 @@ func ApplyConfig(repo *git.Repository, r *Receipt) error {
 		return nil
 	})
 }
+
 func ApplyHead(repo *git.Repository, r *Receipt) error {
 	h := r.Plan.RemoteHead
 	if h == nil {
 		return nil
 	}
 	return Boundary(repo, r, "remote-head", func() error {
-		ref := git.Tracking(h.Remote, "HEAD")
+		ref := git.RemoteTrackingRef(h.Remote, "HEAD")
 		old, e := repo.Symbolic(ref)
 		if e != nil {
 			return e
@@ -476,7 +495,7 @@ func ApplyHead(repo *git.Repository, r *Receipt) error {
 				_, e = repo.Mutate(nil, "symbolic-ref", "--delete", ref)
 			}
 		} else {
-			if !git.ValidRef(*h.After) || !strings.HasPrefix(*h.After, git.Tracking(h.Remote, "")) || *h.After == ref {
+			if !git.ValidRef(*h.After) || !strings.HasPrefix(*h.After, git.RemoteTrackingRef(h.Remote, "")) || *h.After == ref {
 				return fmt.Errorf("INVALID_REMOTE_HEAD")
 			}
 			_, e = repo.Mutate(nil, "symbolic-ref", ref, *h.After)
@@ -484,6 +503,7 @@ func ApplyHead(repo *git.Repository, r *Receipt) error {
 		return e
 	})
 }
+
 func Complete(repo *git.Repository, r *Receipt) error {
 	if r.Outcome == nil {
 		r.Outcome = &Outcome{AdditionalLocalRefUpdates: []git.Update{}}

@@ -267,18 +267,18 @@ func preflight(repo *git.Repository, clean, submodules bool) error {
 	}
 	return nil
 }
-func selectedRemote(repo *git.Repository) (string, error) {
-	remote, e := repo.ConfigOne("wipstream.remote")
+func selectedRemoteName(repo *git.Repository) (string, error) {
+	remoteName, e := repo.ConfigOne("wipstream.remote")
 	if e != nil {
 		return "", e
 	}
-	if remote == "" {
+	if remoteName == "" {
 		return "", fmt.Errorf("NOT_INITIALIZED: run wipstream init")
 	}
-	if _, e = repo.Run("remote", "get-url", remote); e != nil {
+	if _, e = repo.Run("remote", "get-url", remoteName); e != nil {
 		return "", e
 	}
-	return remote, nil
+	return remoteName, nil
 }
 func currentBranch(repo *git.Repository) (string, error) {
 	b, e := repo.Branch()
@@ -288,7 +288,7 @@ func currentBranch(repo *git.Repository) (string, error) {
 	if b == "" {
 		return "", fmt.Errorf("DETACHED_HEAD: check out an ordinary branch")
 	}
-	if _, e = repo.Hash(git.Local(b)); e != nil {
+	if _, e = repo.Hash(git.BranchRef(b)); e != nil {
 		return "", e
 	}
 	return b, nil
@@ -297,10 +297,10 @@ func configChange(repo *git.Repository, key string, after []string) (operations.
 	before, e := repo.Config(key)
 	return operations.Configuration{Key: key, Before: before, After: after}, e
 }
-func addTracking(repo *git.Repository, p *operations.Plan, remote string, names []string) error {
+func addTracking(repo *git.Repository, p *operations.Plan, remoteName string, names []string) error {
 	slices.Sort(names)
 	for _, b := range names {
-		for _, v := range []struct{ key, value string }{{"branch." + b + ".remote", remote}, {"branch." + b + ".merge", git.Local(b)}} {
+		for _, v := range []struct{ key, value string }{{"branch." + b + ".remote", remoteName}, {"branch." + b + ".merge", git.BranchRef(b)}} {
 			c, e := configChange(repo, v.key, []string{v.value})
 			if e != nil {
 				return e

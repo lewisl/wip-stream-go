@@ -4,26 +4,35 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
 	"github.com/charmbracelet/huh"
 	"github.com/lewisl/wip-stream-go/internal/git"
 	"github.com/lewisl/wip-stream-go/internal/operations"
 	"github.com/lewisl/wip-stream-go/internal/workflow"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
-	"os"
-	"path/filepath"
-	"strings"
 )
 
+const overviewHelp = `WipStream helps one developer move work safely between Git clones
+on different machines, using a shared remote.
+
+Initialize each clone once by running wipstream init. 
+Before leaving a machine, save your editor files and run wipstream save. 
+Before resuming on another machine, run wipstream get.`
+
 func New() *cobra.Command {
-	root := &cobra.Command{Use: "wipstream", Short: "Safely synchronize work across ordinary Git clones", SilenceUsage: true, SilenceErrors: true}
+	root := &cobra.Command{Use: "wipstream", Short: "Safely synchronize work across ordinary Git clones", Long: overviewHelp, SilenceUsage: true, SilenceErrors: true}
+	root.CompletionOptions.DisableDefaultCmd = true
 	var dir string
 	var jsonOutput bool
 	root.PersistentFlags().StringVarP(&dir, "repo", "C", ".", "Repository directory")
 	root.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Print structured result")
 	for _, name := range []string{"init", "get", "save", "start", "finish", "update", "reconcile", "continue", "abort", "recover", "undo", "condense"} {
 		commandName := name
-		var message, parent, remote, authority, backup, disposition, operation string
+		var message, parent, remoteName, authority, backup, disposition, operation string
 		var yes, discard bool
 		cmd := &cobra.Command{Use: name, Short: commandHelp(name), Args: cobra.NoArgs}
 		if name == "start" {
@@ -35,7 +44,7 @@ func New() *cobra.Command {
 			if e != nil {
 				return e
 			}
-			opts := workflow.Options{Remote: remote, Authority: authority, BackupParent: backup, Discard: discard, Disposition: disposition, OperationID: operation}
+			opts := workflow.Options{RemoteName: remoteName, Authority: authority, BackupParent: backup, Discard: discard, Disposition: disposition, OperationID: operation}
 			opts.Message = func(suggested string) (string, error) {
 				if cmd.Flags().Changed("message") {
 					if strings.TrimSpace(message) == "" {
@@ -163,11 +172,11 @@ func New() *cobra.Command {
 				status = "PENDING:"
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), status, result.Message)
- 			return nil
+			return nil
 		}
 		switch name {
 		case "init":
-			cmd.Flags().StringVar(&remote, "remote", "", "Git remote (defaults to existing selection or origin)")
+			cmd.Flags().StringVar(&remoteName, "remote", "", "Git remote (defaults to existing selection or origin)")
 			cmd.Flags().StringVar(&authority, "authority", "", "Authority: local-work, remote, reconcile, cancel")
 			cmd.Flags().StringVar(&backup, "backup-parent", "", "Existing parent directory for a verified complete backup")
 			cmd.Flags().BoolVar(&discard, "discard-local-work", false, "Explicitly approve remote replacement without a backup")
@@ -189,6 +198,7 @@ func New() *cobra.Command {
 	}
 	return root
 }
+
 func input(title, suggested string) (string, error) {
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
 		return "", fmt.Errorf("%s requires input; use a command flag", title)
@@ -205,13 +215,13 @@ func input(title, suggested string) (string, error) {
 func commandHelp(name string) string {
 	switch name {
 	case "init":
-		return "Initialize all branches with an explicit authority decision"
+		return "Initialize the local clone to use WipStream synchronization with the remote. If local and remote diverge, you may be prompted to decide which work to keep."
 	case "get":
-		return "Retrieve safe remote changes across all branches"
+		return "Retrieve safe changes from all REMOTE branches before you begin local work."
 	case "save":
-		return "Checkpoint files and complete an atomic remote handoff"
+		return "Commit current changes and push all branches to remote. (NOTE: be sure to save edited files first--the CLI CANNOT save your edited files.)"
 	case "start":
-		return "Start a work branch and record its parent"
+		return "Create a new work branch and switch to the new branch from the current branch"
 	case "finish":
 		return "Advance the parent and retain or delete the work branch"
 	case "update":
@@ -221,12 +231,14 @@ func commandHelp(name string) string {
 	case "continue":
 		return "Complete a recorded WipStream merge and save"
 	case "abort":
-		return "Abort a recorded merge and verify restoration"
+		return "Abort a recorded merge and verify restoration is successful"
 	case "recover":
 		return "Close an incomplete operation while keeping current state"
 	case "undo":
 		return "Reverse the latest eligible completed action"
-	default:
+	case "condense":
 		return "Replace work-branch checkpoints with one commit"
+	default:
+		return "Help error: unknown command."
 	}
 }

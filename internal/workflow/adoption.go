@@ -12,16 +12,16 @@ import (
 	"strings"
 )
 
-func adoptRemote(repo *git.Repository, opts Options, remote, branch, def string, remoteTips map[string]string, revalidate func() error) (result Result, err error) {
-	local, e := tips(repo, "refs/heads/")
+func adoptRemote(repo *git.Repository, opts Options, remoteName, branch, remoteDefault string, fetchedTips map[string]string, revalidate func() error) (result Result, err error) {
+	branchTips, e := refTips(repo, "refs/heads/")
 	if e != nil {
 		return result, e
 	}
-	defaultTip, ok := remoteTips[def]
+	fetchedDefaultTip, ok := fetchedTips[remoteDefault]
 	if !ok {
 		return result, fmt.Errorf("REMOTE_DEFAULT_MISSING")
 	}
-	target, e := repo.Raw(nil, "ls-tree", "-r", "-z", "--full-tree", defaultTip)
+	target, e := repo.Raw(nil, "ls-tree", "-r", "-z", "--full-tree", fetchedDefaultTip)
 	if e != nil {
 		return result, e
 	}
@@ -133,52 +133,52 @@ func adoptRemote(repo *git.Repository, opts Options, remote, branch, def string,
 		}
 	}
 	all := map[string]bool{}
-	for k := range local {
+	for k := range branchTips {
 		all[k] = true
 	}
-	for k := range remoteTips {
+	for k := range fetchedTips {
 		all[k] = true
 	}
 	p := operations.NewPlan("Adopt Remote for Setup")
-	p.Checkout = operations.Checkout{Before: branch, After: def}
-	fetched := []map[string]string{}
-	for _, name := range slices.Sorted(maps.Keys(remoteTips)) {
-		fetched = append(fetched, map[string]string{"name": name, "tip": remoteTips[name]})
+	p.Checkout = operations.Checkout{Before: branch, After: remoteDefault}
+	receiptFetchedTips := []map[string]string{}
+	for _, name := range slices.Sorted(maps.Keys(fetchedTips)) {
+		receiptFetchedTips = append(receiptFetchedTips, map[string]string{"name": name, "tip": fetchedTips[name]})
 	}
 	for _, name := range slices.Sorted(maps.Keys(all)) {
 		var old, new *string
-		if v, ok := local[name]; ok {
+		if v, ok := branchTips[name]; ok {
 			old = git.Ptr(v)
 		}
-		if v, ok := remoteTips[name]; ok {
+		if v, ok := fetchedTips[name]; ok {
 			new = git.Ptr(v)
 		}
-		p.LocalRefUpdates = append(p.LocalRefUpdates, git.Update{Ref: git.Local(name), ExpectedOld: old, Proposed: new})
+		p.LocalRefUpdates = append(p.LocalRefUpdates, git.Update{Ref: git.BranchRef(name), ExpectedOld: old, Proposed: new})
 		if old != nil && !git.Same(old, new) {
 			kind := "rewrite-local-ref"
 			if new == nil {
 				kind = "delete-local-ref"
 			}
-			p.DestructiveEffects = append(p.DestructiveEffects, operations.Effect{Kind: kind, Ref: git.Local(name), Description: "Adopt approved remote history"})
+			p.DestructiveEffects = append(p.DestructiveEffects, operations.Effect{Kind: kind, Ref: git.BranchRef(name), Description: "Adopt approved remote history"})
 		}
 	}
 	for _, name := range targetNames {
 		tracked[name] = true
 	}
-	p.RemoteAdoption, e = json.Marshal(map[string]any{"remote": remote, "remoteDefaultBranch": def, "fetchedTips": fetched, "worktreeFingerprint": fingerprint, "trackedPaths": slices.Sorted(maps.Keys(tracked)), "removedUntrackedPaths": append(append([]string{}, removedFiles...), removedDirs...), "preservedIgnoredPaths": slices.Sorted(maps.Keys(ignored)), "backup": backupInfo})
+	p.RemoteAdoption, e = json.Marshal(map[string]any{"remote": remoteName, "remoteDefaultBranch": remoteDefault, "fetchedTips": receiptFetchedTips, "worktreeFingerprint": fingerprint, "trackedPaths": slices.Sorted(maps.Keys(tracked)), "removedUntrackedPaths": append(append([]string{}, removedFiles...), removedDirs...), "preservedIgnoredPaths": slices.Sorted(maps.Keys(ignored)), "backup": backupInfo})
 	if e != nil {
 		return result, e
 	}
 	p.DestructiveEffects = append(p.DestructiveEffects, operations.Effect{Kind: "replace-files", Description: "Replace tracked files and approved non-ignored untracked entries"})
-	p.ConfigurationChanges, e = initializationConfig(repo, remote, slices.Sorted(maps.Keys(remoteTips)))
+	p.ConfigurationChanges, e = initializationConfig(repo, remoteName, slices.Sorted(maps.Keys(fetchedTips)))
 	if e != nil {
 		return result, e
 	}
-	for name := range local {
+	for name := range branchTips {
 		if !all[name] {
 			continue
 		}
-		if _, ok := remoteTips[name]; !ok {
+		if _, ok := fetchedTips[name]; !ok {
 			keys, e := repo.BranchConfigKeys(name)
 			if e != nil {
 				return result, e
@@ -192,11 +192,11 @@ func adoptRemote(repo *git.Repository, opts Options, remote, branch, def string,
 			}
 		}
 	}
-	before, e := repo.Symbolic(git.Tracking(remote, "HEAD"))
+	before, e := repo.Symbolic(git.RemoteTrackingRef(remoteName, "HEAD"))
 	if e != nil {
 		return result, e
 	}
-	p.RemoteHead = &operations.RemoteHead{Remote: remote, Before: before, After: git.Ptr(git.Tracking(remote, def))}
+	p.RemoteHead = &operations.RemoteHead{Remote: remoteName, Before: before, After: git.Ptr(git.RemoteTrackingRef(remoteName, remoteDefault))}
 	if e = revalidate(); e != nil {
 		return result, e
 	}
@@ -207,7 +207,7 @@ func adoptRemote(repo *git.Repository, opts Options, remote, branch, def string,
 	if now != fingerprint {
 		return result, fmt.Errorf("SETUP_STATE_CHANGED")
 	}
-	result = Result{OperationID: p.OperationID, Checkout: def, Message: fmt.Sprintf("Initialized repository using remote %q. Replaced local branches and working files with the approved remote state; preserved ignored files. Checked out %q. No commit or push was made.", remote, def)}
+	result = Result{OperationID: p.OperationID, Checkout: remoteDefault, Message: fmt.Sprintf("Initialized repository using remote %q. Replaced local branches and working files with the approved remote state; preserved ignored files. Checked out %q. No commit or push was made.", remoteName, remoteDefault)}
 	if backupInfo["path"] != "" {
 		result.Message += " Kept a verified backup at " + backupInfo["path"] + "."
 	}
@@ -255,7 +255,7 @@ func adoptRemote(repo *git.Repository, opts Options, remote, branch, def string,
 					}
 				}
 			}
-			_, e = repo.Mutate(nil, "switch", "--detach", "--discard-changes", defaultTip)
+			_, e = repo.Mutate(nil, "switch", "--detach", "--discard-changes", fetchedDefaultTip)
 			return e
 		}); e != nil {
 			return e
@@ -263,24 +263,24 @@ func adoptRemote(repo *git.Repository, opts Options, remote, branch, def string,
 		if e := operations.ApplyLocal(repo, r); e != nil {
 			return e
 		}
-		if e := mutation(repo, r, "checkout", "switch", def); e != nil {
+		if e := mutation(repo, r, "checkout", "switch", remoteDefault); e != nil {
 			return e
 		}
-		if e := operations.Boundary(repo, r, "remote-fetch", func() error { return repo.Fetch(remote) }); e != nil {
+		if e := operations.Boundary(repo, r, "remote-fetch", func() error { return repo.Fetch(remoteName) }); e != nil {
 			return e
 		}
-		fresh, e := tips(repo, git.Tracking(remote, ""))
+		freshFetchedTips, e := refTips(repo, git.RemoteTrackingRef(remoteName, ""))
 		if e != nil {
 			return e
 		}
-		freshDef, e := repo.Default(remote)
+		queriedRemoteDefault, e := repo.QueryRemoteDefault(remoteName)
 		if e != nil {
 			return e
 		}
-		if !maps.Equal(fresh, remoteTips) || freshDef != def {
+		if !maps.Equal(freshFetchedTips, fetchedTips) || queriedRemoteDefault != remoteDefault {
 			return fmt.Errorf("REMOTE_CHANGED_DURING_ADOPTION")
 		}
-		if e = verifyCheckout(repo, remote, def); e != nil {
+		if e = verifyCheckout(repo, remoteName, remoteDefault); e != nil {
 			return e
 		}
 		after, _, e := snapshot(repo.Root, map[string]bool{".git": true})
@@ -302,7 +302,7 @@ func adoptRemote(repo *git.Repository, opts Options, remote, branch, def string,
 		if e = operations.ApplyConfig(repo, r); e != nil {
 			return e
 		}
-		if e = verifyCheckout(repo, remote, def); e != nil {
+		if e = verifyCheckout(repo, remoteName, remoteDefault); e != nil {
 			return e
 		}
 		return operations.Complete(repo, r)

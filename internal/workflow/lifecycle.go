@@ -9,14 +9,14 @@ import (
 	"github.com/lewisl/wip-stream-go/internal/operations"
 )
 
-func parent(repo *git.Repository, branch, remote string, opts Options, persist bool) (string, error) {
+func parent(repo *git.Repository, branch, remoteName string, opts Options, persist bool) (string, error) {
 	recorded, e := repo.ConfigOne("branch." + branch + ".wipstreamParent")
 	if e != nil {
 		return "", e
 	}
 	selected := recorded
 	if selected == "" {
-		assumed, e := repo.CachedDefault(remote)
+		assumed, e := repo.CachedRemoteDefault(remoteName)
 		if e != nil {
 			return "", e
 		}
@@ -35,7 +35,7 @@ func parent(repo *git.Repository, branch, remote string, opts Options, persist b
 	if _, e = repo.Run("check-ref-format", "--branch", selected); e != nil {
 		return "", e
 	}
-	if _, e = repo.Hash(git.Local(selected)); e != nil {
+	if _, e = repo.Hash(git.BranchRef(selected)); e != nil {
 		return "", fmt.Errorf("PARENT_MISSING: %w", e)
 	}
 	if recorded == "" && persist {
@@ -45,12 +45,13 @@ func parent(repo *git.Repository, branch, remote string, opts Options, persist b
 	}
 	return selected, nil
 }
+
 func Start(repo *git.Repository, name string) (result Result, err error) {
 	err = locked(repo, "Start Branch", true, func() error {
 		if e := preflight(repo, false, false); e != nil {
 			return e
 		}
-		remote, e := selectedRemote(repo)
+		remoteName, e := selectedRemoteName(repo)
 		if e != nil {
 			return e
 		}
@@ -61,7 +62,7 @@ func Start(repo *git.Repository, name string) (result Result, err error) {
 		if _, e = repo.Run("check-ref-format", "--branch", name); e != nil {
 			return fmt.Errorf("INVALID_BRANCH: %w", e)
 		}
-		for _, ref := range []string{git.Local(name), git.Tracking(remote, name)} {
+		for _, ref := range []string{git.BranchRef(name), git.RemoteTrackingRef(remoteName, name)} {
 			tip, e := repo.Object(ref)
 			if e != nil {
 				return e
@@ -74,12 +75,12 @@ func Start(repo *git.Repository, name string) (result Result, err error) {
 		if e != nil {
 			return e
 		}
-		tip, e := repo.Hash(git.Local(base))
+		tip, e := repo.Hash(git.BranchRef(base))
 		if e != nil {
 			return e
 		}
 		p := operations.NewPlan("Start Branch")
-		p.LocalRefUpdates = append(p.LocalRefUpdates, git.Update{Ref: git.Local(name), Proposed: git.Ptr(tip)})
+		p.LocalRefUpdates = append(p.LocalRefUpdates, git.Update{Ref: git.BranchRef(name), Proposed: git.Ptr(tip)})
 		p.Checkout = operations.Checkout{Before: base, After: name}
 		result = Result{OperationID: p.OperationID, Checkout: name, Message: fmt.Sprintf("Started %q from parent %q and checked it out. No commit or push was made; use 'wipstream save' to publish your work.", name, base)}
 		return operations.Recorded(repo, p, func(r *operations.Receipt) error {
@@ -94,12 +95,14 @@ func Start(repo *git.Repository, name string) (result Result, err error) {
 	})
 	return
 }
-func fetchedParity(repo *git.Repository, remote string) error {
-	if e := repo.Fetch(remote); e != nil {
+
+func fetchAndVerifyParity(repo *git.Repository, remoteName string) error {
+	if e := repo.Fetch(remoteName); e != nil {
 		return e
 	}
-	return parity(repo, remote)
+	return verifyFetchedParity(repo, remoteName)
 }
+
 func confirm(opts Options, preview string) error {
 	if opts.Confirm == nil {
 		return fmt.Errorf("CONFIRMATION_REQUIRED: %s", preview)
@@ -113,6 +116,7 @@ func confirm(opts Options, preview string) error {
 	}
 	return nil
 }
+
 func Update(repo *git.Repository, opts Options) (result Result, err error) {
 	intended, e := currentBranch(repo)
 	if e != nil {
@@ -129,7 +133,7 @@ func Update(repo *git.Repository, opts Options) (result Result, err error) {
 		if e := preflight(repo, true, false); e != nil {
 			return e
 		}
-		remote, e := selectedRemote(repo)
+		remoteName, e := selectedRemoteName(repo)
 		if e != nil {
 			return e
 		}
@@ -140,7 +144,7 @@ func Update(repo *git.Repository, opts Options) (result Result, err error) {
 		if branch != intended {
 			return fmt.Errorf("UPDATE_CHECKOUT_CHANGED")
 		}
-		base, e := parent(repo, branch, remote, opts, true)
+		base, e := parent(repo, branch, remoteName, opts, true)
 		if e != nil {
 			return e
 		}
@@ -151,7 +155,7 @@ func Update(repo *git.Repository, opts Options) (result Result, err error) {
 		if current != branch {
 			return fmt.Errorf("UPDATE_CHECKOUT_CHANGED")
 		}
-		contains, e := repo.Ancestor(git.Local(base), git.Local(branch))
+		contains, e := repo.Ancestor(git.BranchRef(base), git.BranchRef(branch))
 		if e != nil {
 			return e
 		}
@@ -159,11 +163,11 @@ func Update(repo *git.Repository, opts Options) (result Result, err error) {
 			result = Result{Checkout: branch, Message: fmt.Sprintf("Branch %q already contains parent %q; no merge was needed.", branch, base)}
 			return nil
 		}
-		target, e := repo.Hash(git.Local(base))
+		target, e := repo.Hash(git.BranchRef(base))
 		if e != nil {
 			return e
 		}
-		result, e = merge(repo, "Update from Parent", branch, git.Local(base), target)
+		result, e = merge(repo, "Update from Parent", branch, git.BranchRef(base), target)
 		if e == nil && !result.Pending {
 			result.Message = fmt.Sprintf("Merged parent %q into %q. The merge is local; run 'wipstream save' to publish it.", base, branch)
 		}
@@ -171,13 +175,14 @@ func Update(repo *git.Repository, opts Options) (result Result, err error) {
 	})
 	return
 }
+
 func Finish(repo *git.Repository, opts Options) (result Result, err error) {
 	var branch, base, disposition string
 	err = locked(repo, "Finish Branch preview", true, func() error {
 		if e := preflight(repo, false, false); e != nil {
 			return e
 		}
-		remote, e := selectedRemote(repo)
+		remoteName, e := selectedRemoteName(repo)
 		if e != nil {
 			return e
 		}
@@ -185,18 +190,18 @@ func Finish(repo *git.Repository, opts Options) (result Result, err error) {
 		if e != nil {
 			return e
 		}
-		def, e := repo.CachedDefault(remote)
+		remoteDefault, e := repo.CachedRemoteDefault(remoteName)
 		if e != nil {
 			return e
 		}
-		if branch == def {
+		if branch == remoteDefault {
 			return fmt.Errorf("DEFAULT_BRANCH: start or select a work branch")
 		}
-		base, e = parent(repo, branch, remote, opts, false)
+		base, e = parent(repo, branch, remoteName, opts, false)
 		if e != nil {
 			return e
 		}
-		contains, e := repo.Ancestor(git.Local(base), git.Local(branch))
+		contains, e := repo.Ancestor(git.BranchRef(base), git.BranchRef(branch))
 		if e != nil {
 			return e
 		}
@@ -243,7 +248,7 @@ func Finish(repo *git.Repository, opts Options) (result Result, err error) {
 		if e := preflight(repo, true, false); e != nil {
 			return e
 		}
-		remote, e := selectedRemote(repo)
+		remoteName, e := selectedRemoteName(repo)
 		if e != nil {
 			return e
 		}
@@ -258,32 +263,32 @@ func Finish(repo *git.Repository, opts Options) (result Result, err error) {
 		if now != branch || (recorded != "" && recorded != base) {
 			return fmt.Errorf("FINISH_TARGET_CHANGED")
 		}
-		if e = fetchedParity(repo, remote); e != nil {
+		if e = fetchAndVerifyParity(repo, remoteName); e != nil {
 			return e
 		}
-		contains, e := repo.Ancestor(git.Local(base), git.Local(branch))
+		contains, e := repo.Ancestor(git.BranchRef(base), git.BranchRef(branch))
 		if e != nil {
 			return e
 		}
 		if !contains {
 			return fmt.Errorf("PARENT_UPDATE_REQUIRED")
 		}
-		baseTip, e := repo.Hash(git.Local(base))
+		baseTip, e := repo.Hash(git.BranchRef(base))
 		if e != nil {
 			return e
 		}
-		branchTip, e := repo.Hash(git.Local(branch))
+		branchTip, e := repo.Hash(git.BranchRef(branch))
 		if e != nil {
 			return e
 		}
 		p := operations.NewPlan("Finish Branch")
 		p.Checkout = operations.Checkout{Before: branch, After: base}
-		p.LocalRefUpdates = append(p.LocalRefUpdates, git.Update{Ref: git.Local(base), ExpectedOld: git.Ptr(baseTip), Proposed: git.Ptr(branchTip)})
-		p.RemoteRefUpdates = append(p.RemoteRefUpdates, git.RemoteUpdate{Ref: git.Local(base), Expected: git.Ptr(baseTip), Proposed: git.Ptr(branchTip)})
+		p.LocalRefUpdates = append(p.LocalRefUpdates, git.Update{Ref: git.BranchRef(base), ExpectedOld: git.Ptr(baseTip), Proposed: git.Ptr(branchTip)})
+		p.RemoteRefUpdates = append(p.RemoteRefUpdates, git.RemoteUpdate{Ref: git.BranchRef(base), Expected: git.Ptr(baseTip), Proposed: git.Ptr(branchTip)})
 		p.DestructiveEffects = append(p.DestructiveEffects, operations.Effect{Kind: "replace-checkout", Description: "Switch to parent " + base})
 		if disposition == "delete" {
-			p.LocalRefUpdates = append(p.LocalRefUpdates, git.Update{Ref: git.Local(branch), ExpectedOld: git.Ptr(branchTip)})
-			p.RemoteRefUpdates = append(p.RemoteRefUpdates, git.RemoteUpdate{Ref: git.Local(branch), Expected: git.Ptr(branchTip)})
+			p.LocalRefUpdates = append(p.LocalRefUpdates, git.Update{Ref: git.BranchRef(branch), ExpectedOld: git.Ptr(branchTip)})
+			p.RemoteRefUpdates = append(p.RemoteRefUpdates, git.RemoteUpdate{Ref: git.BranchRef(branch), Expected: git.Ptr(branchTip)})
 			keys, e := repo.BranchConfigKeys(branch)
 			if e != nil {
 				return e
@@ -295,7 +300,7 @@ func Finish(repo *git.Repository, opts Options) (result Result, err error) {
 				}
 				p.ConfigurationChanges = append(p.ConfigurationChanges, c)
 			}
-			p.DestructiveEffects = append(p.DestructiveEffects, operations.Effect{Kind: "delete-local-ref", Ref: git.Local(branch), Description: "Delete completed branch"}, operations.Effect{Kind: "delete-remote-ref", Ref: git.Local(branch), Description: "Delete completed remote branch"})
+			p.DestructiveEffects = append(p.DestructiveEffects, operations.Effect{Kind: "delete-local-ref", Ref: git.BranchRef(branch), Description: "Delete completed branch"}, operations.Effect{Kind: "delete-remote-ref", Ref: git.BranchRef(branch), Description: "Delete completed remote branch"})
 		} else {
 			c, e := configChange(repo, "branch."+branch+".wipstreamParent", []string{base})
 			if e != nil {
@@ -304,12 +309,12 @@ func Finish(repo *git.Repository, opts Options) (result Result, err error) {
 			p.ConfigurationChanges = append(p.ConfigurationChanges, c)
 		}
 		result = Result{OperationID: p.OperationID, Checkout: base, CheckpointCreated: saved.CheckpointCreated}
-		if e := publishLifecycle(repo, p, remote); e != nil {
+		if e := publishLifecycle(repo, p, remoteName); e != nil {
 			result.Message = "Finish did not complete; inspect the current local and remote state before retrying."
 			return e
 		}
 		result.Published = true
-		result.Message = fmt.Sprintf("Finished %q into %q locally and on remote %q. ", branch, base, remote)
+		result.Message = fmt.Sprintf("Finished %q into %q locally and on remote %q. ", branch, base, remoteName)
 		if saved.CheckpointCreated {
 			result.Message += "Created and published a checkpoint before finishing. "
 		}
@@ -322,12 +327,13 @@ func Finish(repo *git.Repository, opts Options) (result Result, err error) {
 	})
 	return
 }
+
 func Condense(repo *git.Repository, opts Options) (result Result, err error) {
 	err = locked(repo, "Condense Branch", true, func() error {
 		if e := preflight(repo, true, false); e != nil {
 			return e
 		}
-		remote, e := selectedRemote(repo)
+		remoteName, e := selectedRemoteName(repo)
 		if e != nil {
 			return e
 		}
@@ -335,29 +341,29 @@ func Condense(repo *git.Repository, opts Options) (result Result, err error) {
 		if e != nil {
 			return e
 		}
-		base, e := parent(repo, branch, remote, opts, true)
+		base, e := parent(repo, branch, remoteName, opts, true)
 		if e != nil {
 			return e
 		}
-		if e = fetchedParity(repo, remote); e != nil {
+		if e = fetchAndVerifyParity(repo, remoteName); e != nil {
 			return e
 		}
-		contains, e := repo.Ancestor(git.Local(base), git.Local(branch))
+		contains, e := repo.Ancestor(git.BranchRef(base), git.BranchRef(branch))
 		if e != nil {
 			return e
 		}
 		if !contains {
 			return fmt.Errorf("PARENT_UPDATE_REQUIRED")
 		}
-		old, e := repo.Hash(git.Local(branch))
+		old, e := repo.Hash(git.BranchRef(branch))
 		if e != nil {
 			return e
 		}
-		parentTip, e := repo.Hash(git.Local(base))
+		parentTip, e := repo.Hash(git.BranchRef(base))
 		if e != nil {
 			return e
 		}
-		count, e := repo.Run("rev-list", "--count", git.Local(base)+".."+git.Local(branch))
+		count, e := repo.Run("rev-list", "--count", git.BranchRef(base)+".."+git.BranchRef(branch))
 		if e != nil {
 			return e
 		}
@@ -403,51 +409,52 @@ func Condense(repo *git.Repository, opts Options) (result Result, err error) {
 		}
 		p := operations.NewPlan("Condense Branch")
 		p.Checkout = operations.Checkout{Before: branch, After: branch}
-		p.LocalRefUpdates = append(p.LocalRefUpdates, git.Update{Ref: git.Local(branch), ExpectedOld: git.Ptr(old), Proposed: git.Ptr(newTip)})
-		p.RemoteRefUpdates = append(p.RemoteRefUpdates, git.RemoteUpdate{Ref: git.Local(branch), Expected: git.Ptr(old), Proposed: git.Ptr(newTip)})
-		p.DestructiveEffects = append(p.DestructiveEffects, operations.Effect{Kind: "rewrite-local-ref", Ref: git.Local(branch), Description: "Replace checkpoints"}, operations.Effect{Kind: "rewrite-remote-ref", Ref: git.Local(branch), Description: "Replace remote checkpoints"})
+		p.LocalRefUpdates = append(p.LocalRefUpdates, git.Update{Ref: git.BranchRef(branch), ExpectedOld: git.Ptr(old), Proposed: git.Ptr(newTip)})
+		p.RemoteRefUpdates = append(p.RemoteRefUpdates, git.RemoteUpdate{Ref: git.BranchRef(branch), Expected: git.Ptr(old), Proposed: git.Ptr(newTip)})
+		p.DestructiveEffects = append(p.DestructiveEffects, operations.Effect{Kind: "rewrite-local-ref", Ref: git.BranchRef(branch), Description: "Replace checkpoints"}, operations.Effect{Kind: "rewrite-remote-ref", Ref: git.BranchRef(branch), Description: "Replace remote checkpoints"})
 		result = Result{OperationID: p.OperationID, Checkout: branch}
-		if e := publishLifecycle(repo, p, remote); e != nil {
+		if e := publishLifecycle(repo, p, remoteName); e != nil {
 			return e
 		}
 		result.Published = true
-		result.Message = fmt.Sprintf("Condensed %d commits on %q into one commit with the same final files. Pushed the rewritten branch to %q; checked out %q.", n, branch, remote, branch)
+		result.Message = fmt.Sprintf("Condensed %d commits on %q into one commit with the same final files. Pushed the rewritten branch to %q; checked out %q.", n, branch, remoteName, branch)
 		return nil
 	})
 	return
 }
-func publishLifecycle(repo *git.Repository, p operations.Plan, remote string) error {
-	local, e := tips(repo, "refs/heads/")
+
+func publishLifecycle(repo *git.Repository, p operations.Plan, remoteName string) error {
+	branchTips, e := refTips(repo, "refs/heads/")
 	if e != nil {
 		return e
 	}
-	fetched, e := tips(repo, git.Tracking(remote, ""))
+	fetchedTips, e := refTips(repo, git.RemoteTrackingRef(remoteName, ""))
 	if e != nil {
 		return e
 	}
 	return operations.Recorded(repo, p, func(r *operations.Receipt) error {
-		if e := verifyInputs(repo, p.Checkout.Before, local, fetched, remote); e != nil {
+		if e := verifyInputs(repo, p.Checkout.Before, branchTips, fetchedTips, remoteName); e != nil {
 			return e
 		}
-		if e := operations.Boundary(repo, r, "remote-push", func() error { return repo.Push(remote, p.RemoteRefUpdates, false) }); e != nil {
+		if e := operations.Boundary(repo, r, "remote-push", func() error { return repo.Push(remoteName, p.RemoteRefUpdates, false) }); e != nil {
 			return e
 		}
-		if e := operations.Boundary(repo, r, "remote-fetch", func() error { return repo.Fetch(remote) }); e != nil {
+		if e := operations.Boundary(repo, r, "remote-fetch", func() error { return repo.Fetch(remoteName) }); e != nil {
 			return e
 		}
-		expected := map[string]string{}
-		for k, v := range fetched {
-			expected[k] = v
+		expectedFetchedTips := map[string]string{}
+		for k, v := range fetchedTips {
+			expectedFetchedTips[k] = v
 		}
 		for _, u := range p.RemoteRefUpdates {
 			b := strings.TrimPrefix(u.Ref, "refs/heads/")
 			if u.Proposed == nil {
-				delete(expected, b)
+				delete(expectedFetchedTips, b)
 			} else {
-				expected[b] = *u.Proposed
+				expectedFetchedTips[b] = *u.Proposed
 			}
 		}
-		if e := verifyInputs(repo, p.Checkout.Before, local, expected, remote); e != nil {
+		if e := verifyInputs(repo, p.Checkout.Before, branchTips, expectedFetchedTips, remoteName); e != nil {
 			return e
 		}
 		if e := mutation(repo, r, "checkout", "switch", "--detach"); e != nil {
@@ -462,7 +469,7 @@ func publishLifecycle(repo *git.Repository, p operations.Plan, remote string) er
 		if e := operations.ApplyConfig(repo, r); e != nil {
 			return e
 		}
-		if e := verifyCheckout(repo, remote, p.Checkout.After); e != nil {
+		if e := verifyCheckout(repo, remoteName, p.Checkout.After); e != nil {
 			return e
 		}
 		return operations.Complete(repo, r)
