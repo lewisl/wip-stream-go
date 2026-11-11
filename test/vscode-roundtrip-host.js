@@ -62,7 +62,7 @@ exports.run = async function () {
 
       go(["get"]); evidence.steps.push("Go: get");
       fs.writeFileSync(path.join(workspace, "go.txt"), "created by Go CLI\n");
-      const saved = go(["save", "-m", "Go roundtrip checkpoint"]);
+      const saved = go(["push", "-m", "Go roundtrip checkpoint"]);
       assert.equal(saved.published, true); evidence.steps.push("Go: save");
       evidence.goSaveOperation = saved.operationId;
 

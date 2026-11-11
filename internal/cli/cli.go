@@ -30,7 +30,7 @@ func New() *cobra.Command {
 	var jsonOutput bool
 	root.PersistentFlags().StringVarP(&dir, "repo", "C", ".", "Repository directory")
 	root.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Print structured result")
-	for _, name := range []string{"init", "get", "save", "start", "finish", "update", "reconcile", "continue", "abort", "recover", "undo", "condense"} {
+	for _, name := range []string{"init", "get", "push", "start", "finish", "update", "reconcile", "continue", "abort", "recover", "undo", "condense"} {
 		commandName := name
 		var message, parent, remoteName, authority, backup, disposition, operation string
 		var yes, discard bool
@@ -117,7 +117,7 @@ func New() *cobra.Command {
 				result, e = workflow.Init(repo, opts)
 			case "get":
 				result, e = workflow.Get(repo)
-			case "save":
+			case "push":
 				result, e = workflow.Save(repo, opts)
 			case "start":
 				branch := ""
@@ -148,7 +148,7 @@ func New() *cobra.Command {
 				result, e = workflow.Condense(repo, opts)
 			}
 			if e != nil {
-				if result.Message != "" && (commandName == "save" || commandName == "finish" || commandName == "reconcile" || commandName == "continue" || commandName == "init" && result.CheckpointCreated) {
+				if result.Message != "" && (commandName == "push" || commandName == "finish" || commandName == "reconcile" || commandName == "continue" || commandName == "init" && result.CheckpointCreated) {
 					fmt.Fprintln(cmd.ErrOrStderr(), "WARNING:", result.Message)
 				}
 				if result.OperationID != "" {
@@ -218,7 +218,7 @@ func commandHelp(name string) string {
 		return "Initialize the local clone to use WipStream synchronization with the remote. If local and remote diverge, you may be prompted to decide which work to keep."
 	case "get":
 		return "Retrieve safe changes from all REMOTE branches before you begin local work."
-	case "save":
+	case "push":
 		return "Commit current changes and push all branches to remote. (NOTE: be sure to save edited files first--the CLI CANNOT save your edited files.)"
 	case "start":
 		return "Create a new work branch and switch to the new branch from the current branch"

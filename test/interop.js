@@ -54,7 +54,7 @@ const cases = [
   ["TypeScript -> Go -> TypeScript branch lifecycle and receipts", async ({ clone }) => {
     const a = await clone("a"); await sync.initializeRepository(a.repo);
     go(a.dir, ["start", "feature"]); write(a.dir, "work.txt", "TS checkpoint\n"); await saved(a.repo);
-    go(a.dir, ["get"]); write(a.dir, "go.txt", "Go checkpoint\n"); go(a.dir, ["save", "-m", "Go checkpoint"]);
+    go(a.dir, ["get"]); write(a.dir, "go.txt", "Go checkpoint\n"); go(a.dir, ["push", "-m", "Go checkpoint"]);
     const receipts = await operations.listOperationReceipts(a.repo); assert.ok(receipts.some(r => r.plan.command === "Commit and Save" && r.plan.checkpoint?.message === "Go checkpoint"));
     go(a.dir, ["finish", "--disposition", "retain", "--yes"]);
     await sync.getFromRemote(a.repo); assert.equal(await a.repo.currentBranch(), "main");
@@ -62,13 +62,13 @@ const cases = [
   }],
   ["Go -> TypeScript -> Go initialization and dirty Start", async ({ clone }) => {
     const a = await clone("a"); go(a.dir, ["init"]); write(a.dir, "dirty.txt", "carry\n");
-    await lifecycle.startBranch(a.repo, "feature"); go(a.dir, ["save", "-m", "carried"]);
+    await lifecycle.startBranch(a.repo, "feature"); go(a.dir, ["push", "-m", "carried"]);
     await sync.getFromRemote(a.repo); assert.equal(git(a.dir, ["show", "feature:dirty.txt"]), "carry");
     assert.equal((await operations.listOperationReceipts(a.repo)).every(r => !["planned", "in-progress"].includes(r.status)), true);
   }],
   ["Go condense -> TypeScript undo -> Go", async ({ clone }) => {
     const a = await clone("a"); go(a.dir, ["init"]); go(a.dir, ["start", "feature"]);
-    for (const value of ["one", "two"]) { write(a.dir, "work.txt", value); go(a.dir, ["save", "-m", value]); }
+    for (const value of ["one", "two"]) { write(a.dir, "work.txt", value); go(a.dir, ["push", "-m", value]); }
     const before = git(a.dir, ["rev-parse", "HEAD"]); go(a.dir, ["condense", "-m", "condensed", "--yes"]);
     assert.equal((await undo.inspectUndoEligibility(a.repo)).eligible, true);
     await undo.undoLastAction(a.repo); assert.equal(git(a.dir, ["rev-parse", "HEAD"]), before); go(a.dir, ["get"]);
@@ -115,15 +115,15 @@ const cases = [
   ["Go interruption -> TypeScript recover -> Go", async ({ clone }) => {
     const a = await clone("a"); go(a.dir, ["init"]); write(a.dir, "work.txt", "checkpoint");
     const hook = path.join(a.dir, ".git/hooks/pre-push"); write(path.dirname(hook), path.basename(hook), "#!/bin/sh\nexit 1\n"); fs.chmodSync(hook, 0o755);
-    assert.match(go(a.dir, ["save", "-m", "checkpoint"], 1), /remote handoff did not complete/); const receipts = await operations.inspectIncompleteOperations(a.repo); assert.equal(receipts.length, 1);
-    fs.unlinkSync(hook); await recovery.recoverIncompleteOperation(a.repo, receipts[0].plan.operationId); go(a.dir, ["save"]);
+    assert.match(go(a.dir, ["push", "-m", "checkpoint"], 1), /remote handoff did not complete/); const receipts = await operations.inspectIncompleteOperations(a.repo); assert.equal(receipts.length, 1);
+    fs.unlinkSync(hook); await recovery.recoverIncompleteOperation(a.repo, receipts[0].plan.operationId); go(a.dir, ["push"]);
   }],
   ["TypeScript command lock blocks Go; Go can resume after release", async ({ clone }) => {
     const a = await clone("a"); await sync.initializeRepository(a.repo); const lock = await safety.acquireRepositoryCommandLock(a.repo, "TS holds lock");
     try { assert.match(go(a.dir, ["get"], 1), /COMMAND_IN_PROGRESS/); } finally { await lock.release(); } go(a.dir, ["get"]);
   }],
   ["Go Finish delete -> TypeScript Undo -> Go", async ({ clone }) => {
-    const a = await clone("a"); go(a.dir, ["init"]); go(a.dir, ["start", "feature"]); write(a.dir, "work.txt", "work"); go(a.dir, ["save", "-m", "work"]);
+    const a = await clone("a"); go(a.dir, ["init"]); go(a.dir, ["start", "feature"]); write(a.dir, "work.txt", "work"); go(a.dir, ["push", "-m", "work"]);
     go(a.dir, ["finish", "--disposition", "delete", "--yes"]); await undo.undoLastAction(a.repo);
     assert.equal(await a.repo.currentBranch(), "feature"); assert.equal(await a.repo.getConfig("branch.feature.wipstreamParent"), "main"); go(a.dir, ["get"]);
   }],

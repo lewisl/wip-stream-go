@@ -38,7 +38,7 @@ func TestInteroperableLockRecordBlocksOtherCommands(t *testing.T) {
 
 // Shared guards apply to every ordinary command, as in repository-safety.test.js.
 func TestCommandsRefuseIncompleteOperation(t *testing.T) {
-	for _, name := range []string{"init", "get", "save", "start", "finish", "update", "reconcile", "condense"} {
+	for _, name := range []string{"init", "get", "push", "start", "finish", "update", "reconcile", "condense"} {
 		t.Run(name, func(t *testing.T) {
 			f := newFixture(t)
 			plan := operations.NewPlan("Get from Remote")
@@ -56,7 +56,7 @@ func TestCommandsRefuseIncompleteOperation(t *testing.T) {
 					return Init(f.first, Options{})
 				case "get":
 					return Get(f.first)
-				case "save":
+				case "push":
 					return Save(f.first, options("blocked"))
 				case "start":
 					return Start(f.first, "topic")

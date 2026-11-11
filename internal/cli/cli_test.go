@@ -22,7 +22,7 @@ import (
 func TestCommandSurface(t *testing.T) {
 	expected := map[string][]string{
 		"init": {"remote", "authority", "backup-parent", "discard-local-work", "message"},
-		"get":  {}, "save": {"message"}, "start": {},
+		"get":  {}, "push": {"message"}, "start": {},
 		"finish": {"disposition", "message", "parent", "yes"}, "update": {"parent"},
 		"reconcile": {"message"}, "continue": {"message"}, "abort": {},
 		"recover": {"operation", "yes"}, "undo": {"yes"}, "condense": {"message", "parent", "yes"},
@@ -65,7 +65,7 @@ func TestCommandSurface(t *testing.T) {
 }
 
 func TestCLIRejectsUnexpectedArgumentsBeforeOpeningRepository(t *testing.T) {
-	for _, name := range []string{"init", "get", "save", "start", "finish", "update", "reconcile", "continue", "abort", "recover", "undo", "condense"} {
+	for _, name := range []string{"init", "get", "push", "start", "finish", "update", "reconcile", "continue", "abort", "recover", "undo", "condense"} {
 		t.Run(name, func(t *testing.T) {
 			args := []string{name, "unexpected"}
 			if name == "start" {
@@ -83,7 +83,7 @@ func TestCLIHelpDoesNotRequireRepository(t *testing.T) {
 	root := New()
 	var out bytes.Buffer
 	root.SetOut(&out)
-	root.SetArgs([]string{"-C", filepath.Join(t.TempDir(), "missing"), "save", "--help"})
+	root.SetArgs([]string{"-C", filepath.Join(t.TempDir(), "missing"), "push", "--help"})
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
@@ -100,16 +100,16 @@ func TestCLILifecycle(t *testing.T) {
 			execute(t, f.first, "get")
 			execute(t, f.first, "start", "feature")
 			cliWrite(t, f.first, "work.txt", "one\n")
-			saved := execute(t, f.first, "save", "-m", "first checkpoint")
+			saved := execute(t, f.first, "push", "-m", "first checkpoint")
 			if !saved.CheckpointCreated || !saved.Published {
 				t.Fatal(saved)
 			}
-			noOp := execute(t, f.first, "save")
+			noOp := execute(t, f.first, "push")
 			if noOp.CheckpointCreated || !noOp.Published {
 				t.Fatal("clean CLI Save requested input", noOp)
 			}
 			cliWrite(t, f.first, "work.txt", "two\n")
-			execute(t, f.first, "save", "--message", "second checkpoint")
+			execute(t, f.first, "push", "--message", "second checkpoint")
 			before := cliGit(t, f.first, "rev-parse", "HEAD")
 			execute(t, f.first, "condense", "-m", "final", "--yes")
 			if cliGit(t, f.first, "rev-list", "--count", "main..feature") != "1" {
@@ -141,9 +141,9 @@ func TestCLIUpdateAbortAndContinue(t *testing.T) {
 	execute(t, f.second, "init")
 	execute(t, f.first, "start", "feature")
 	cliWrite(t, f.first, "main.txt", "feature\n")
-	execute(t, f.first, "save", "-m", "feature")
+	execute(t, f.first, "push", "-m", "feature")
 	cliWrite(t, f.second, "main.txt", "parent\n")
-	execute(t, f.second, "save", "-m", "parent")
+	execute(t, f.second, "push", "-m", "parent")
 	before := cliGit(t, f.first, "rev-parse", "HEAD")
 	pending := execute(t, f.first, "update")
 	if !pending.Pending || !slices.Contains(pending.Conflicts, "main.txt") {
@@ -177,7 +177,7 @@ func TestCLIReconcile(t *testing.T) {
 	cliGit(t, f.first, "add", ".")
 	cliGit(t, f.first, "commit", "-m", "local")
 	cliWrite(t, f.second, "remote.txt", "remote\n")
-	execute(t, f.second, "save", "-m", "remote")
+	execute(t, f.second, "push", "-m", "remote")
 	result := execute(t, f.first, "reconcile")
 	if !result.Published || cliGit(t, f.remote, "show", "main:local.txt") != "local" || cliGit(t, f.remote, "show", "main:remote.txt") != "remote" {
 		t.Fatal("CLI Reconcile did not preserve both histories", result)
@@ -228,10 +228,10 @@ func TestCLINoninteractiveRefusals(t *testing.T) {
 				args = []string{"start"}
 			case "save-message":
 				cliWrite(t, f.first, "draft.txt", "draft\n")
-				args = []string{"save"}
+				args = []string{"push"}
 			case "save-blank-message":
 				cliWrite(t, f.first, "draft.txt", "draft\n")
-				args = []string{"save", "-m", " \t "}
+				args = []string{"push", "-m", " \t "}
 				expected = "cannot be blank"
 			case "finish-disposition":
 				args = []string{"finish"}
@@ -241,7 +241,7 @@ func TestCLINoninteractiveRefusals(t *testing.T) {
 				args = []string{"finish", "--disposition", "delete"}
 				expected = "confirmation required"
 			case "undo-confirmation":
-				execute(t, f.first, "save")
+				execute(t, f.first, "push")
 				args = []string{"undo"}
 				expected = "confirmation required"
 			case "init-authority":
@@ -266,9 +266,9 @@ func TestCLIFailedSaveReportsLocalCheckpoint(t *testing.T) {
 	execute(t, f.first, "init")
 	execute(t, f.second, "init")
 	cliWrite(t, f.second, "remote.txt", "remote\n")
-	execute(t, f.second, "save", "-m", "remote")
+	execute(t, f.second, "push", "-m", "remote")
 	cliWrite(t, f.first, "local.txt", "local\n")
-	out, diagnostic, err := runCLI(t, f.first, "save", "-m", "local checkpoint")
+	out, diagnostic, err := runCLI(t, f.first, "push", "-m", "local checkpoint")
 	if err == nil || out != "" || !strings.Contains(diagnostic, "Do not resume") || cliGit(t, f.first, "show", "HEAD:local.txt") != "local" {
 		t.Fatal("failed Save diagnostic or checkpoint incorrect", out, diagnostic, err)
 	}
